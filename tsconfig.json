@@ -1,0 +1,7 @@
+{
+  "extends": "./.nitro/types/tsconfig.json",
+	"compilerOptions": {
+		"skipLibCheck": true
+	},
+	"exclude":["src/client"]
+}
