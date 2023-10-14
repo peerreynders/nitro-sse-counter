@@ -1,3 +1,6 @@
+// file: src/server/counter.ts
+import { CONTEXT_SESSION_ID } from './session';
+
 import type { EventHandlerRequest, H3Event } from 'h3';
 
 type RequestEvent = H3Event<EventHandlerRequest>;
@@ -11,6 +14,50 @@ export type CounterRecord = {
 	observers: number;
 };
 
+type TaskRecord = {
+	id: string;
+  task: () => Promise<void>;
+};
+
+// --- Task Queue
+const taskQueue: TaskRecord[] = [];
+
+const locate = new class {
+	id = '';
+	readonly withId = (record: TaskRecord) => this.id === record.id;  
+	readonly countWithId = (count: number, record: TaskRecord) => 
+		this.id === record.id ? count + 1 : count;
+};
+
+// Continue running until there are no more tasks with the same
+// session IDs in taskQueue
+async function runTasks(record: TaskRecord) {
+	for(
+		;
+		typeof record !== 'undefined';
+		record = taskQueue.find(locate.withId)
+	) {
+		await record.task();
+
+		const index = taskQueue.indexOf(record);
+		taskQueue.splice(index, 1);
+		locate.id = record.id;
+	}
+}
+
+function queueTask(record: TaskRecord) {
+	locate.id = record.id;
+	const count = taskQueue.reduce(locate.countWithId, 0);
+	taskQueue.push(record);
+
+	// Others with identical session ID already running
+	if (count > 0) return;
+
+  runTasks(record);
+}
+
+// --- Storage Tnteraction
+//
 const CONTEXT_COUNTER = 'counter';
 const STORAGE_COUNTER = 'counter';
 
@@ -18,70 +65,125 @@ const makeCounterRecord = (id: string, lastEventId: string): CounterRecord => ({
 	id,
 	lastEventId,
 	count: 0,
-	observers: 0,
+	observers: 1,
 });
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const tap = <T>(name: string, x: T): T => (console.log(name, x), x);
+// inferred return type should also included `undefined`
+async function counterRecord(id: unknown): Promise<CounterRecord | void> {
+	if (typeof id !== 'string') return undefined;
 
-// inferred return type should also included `null`
-const counterRecord = (id: string): Promise<void | CounterRecord> =>
-	useStorage(STORAGE_COUNTER).getItem<CounterRecord>(id);
+	return (await useStorage(STORAGE_COUNTER).getItem<CounterRecord>(id)) ?? undefined;
+}
 
 const removeRecord = (id: string) => useStorage(STORAGE_COUNTER).removeItem(id);
 
 const updateRecord = (record: CounterRecord) =>
 	useStorage(STORAGE_COUNTER).setItem<CounterRecord>(record.id, record);
 
+// --- Tasks
+// 
 function counterRecordFromEvent(event: RequestEvent) {
-	const id = event.context[CONTEXT_COUNTER];
-	if (typeof id !== 'string') return undefined;
+	const id = event.context[CONTEXT_SESSION_ID];
+	const counterId = event.context[CONTEXT_COUNTER];
+	return new Promise<CounterRecord | void>((resolve, reject) => {
+		const task = async () => {
+			try {
 
-	return counterRecord(id);
+				const record = await counterRecord(counterId);
+				return resolve(record);
+
+			} catch (error) {
+				reject(error);
+			}
+		};
+
+	  queueTask({ id, task });
+	});
 }
 
-// inferred return type should also included `undefined`
-async function increment(id: string): Promise<void | CounterRecord> {
-	const record = (await counterRecord(id)) ?? undefined;
-	if (!record) return undefined;
+function increment(event: RequestEvent) {
+	const id = event.context[CONTEXT_SESSION_ID];
+	const counterId = event.context[CONTEXT_COUNTER];
+	return new Promise<CounterRecord | void>((resolve, reject) => {
+		const task = async () => {
+			try {
 
-	record.count += 1;
-	record.lastEventId = String(Date.now());
-	await updateRecord(record);
-	return record;
+				const record = await counterRecord(counterId);
+				if (!record) return resolve(undefined);
+
+				record.count += 1;
+				record.lastEventId = String(Date.now());
+				await updateRecord(record);
+	      return resolve(record);
+
+			} catch (error) {
+				reject(error);
+			}
+		};
+
+	  queueTask({ id, task });
+	});
 }
 
-async function addObserver(
+function addObserver(
 	event: RequestEvent,
 	refreshId: (event: RequestEvent) => Promise<string>
 ) {
-	let record = (await counterRecordFromEvent(event)) ?? undefined;
+	const id = event.context[CONTEXT_SESSION_ID];
+	const counterId = event.context[CONTEXT_COUNTER];
+	return new Promise<CounterRecord>((resolve, reject) => {
+		const task = async () => {
+			try {
 
-	if (!record) {
-		const id = await refreshId(event);
-		record = makeCounterRecord(id, String(Date.now()));
-	}
+	      let record = await counterRecord(counterId);
+				if (record) {
+					record.observers += 1;
 
-	record.observers += 1;
-	await updateRecord(record);
+				} else {
+					const freshId = await refreshId(event);
+					record = makeCounterRecord(freshId, String(Date.now()));
+				}
 
-	return record;
+				await updateRecord(record);
+				return resolve(record);
+
+			} catch (error) {
+				reject(error);
+			}
+		};
+
+	  queueTask({ id, task });
+	});
 }
 
-// inferred return type should also included `undefined`
-async function dropObserver(id: string): Promise<void | CounterRecord> {
-	const record = (await counterRecord(id)) ?? undefined;
-	if (!record) return undefined;
+function dropObserver(
+	counterId: string,
+	id: string
+) {
+	return new Promise<CounterRecord | void>((resolve, reject) => {
+		const task = async () => {
 
-	if (record.observers < 2) {
-		await removeRecord(record.id);
-		return undefined;
-	}
+			try {
+	      const record = await counterRecord(counterId);
+				if (!record) return resolve(undefined);
 
-	record.observers -= 1;
-	await updateRecord(record);
+				if (record.observers < 2) {
+					await removeRecord(record.id);
+					return resolve(undefined);
+				}
 
-	return record;
+				record.observers -= 1;
+				await updateRecord(record);
+
+				return resolve(record);
+
+			} catch (error) {
+				reject(error);
+			}
+		};
+
+	  queueTask({ id, task });
+	});
 }
 
 export {

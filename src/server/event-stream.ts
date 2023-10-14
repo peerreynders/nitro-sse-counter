@@ -15,7 +15,6 @@ function makeEventStream(request: IncomingMessage, init: InitSource) {
 	let cleanup: (() => void) | undefined;
 	let closeStream: (() => void) | undefined;
 	let onClientClose = () => {
-		console.log('client CLOSING');
 		if (onClientClose) {
 			request.removeListener('close', onClientClose);
 			onClientClose = undefined;
@@ -33,7 +32,6 @@ function makeEventStream(request: IncomingMessage, init: InitSource) {
 			};
 
 			closeStream = () => {
-				console.log('closeStream');
 				if (!cleanup) return;
 
 				cleanup();

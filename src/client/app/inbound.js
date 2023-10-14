@@ -78,7 +78,6 @@ function makeInbound(href) {
 		sink: undefined,
 		source: undefined,
 		handleEvent(event) {
-			console.log('handleEvent', event);
 			if (!this.sink || this.status === false) return;
 
 			if (event instanceof MessageEvent) {

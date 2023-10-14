@@ -22,7 +22,6 @@ const noOp = () => {};
  * @return { void }
  */
 function onAvailable(binder, status) {
-	console.log('trigger', status, binder.root);
 	switch (status) {
 		case availableStatus.UNAVAILABLE: {
 			binder.root.classList.remove(MODIFIER_WAIT);

@@ -1,4 +1,5 @@
 // @ts-check
+// file: src/client/app/index.js
 /** @typedef { import('../types').CountSink } CountSink */
 /** @typedef { import('../types').AvailableStatus } AvailableStatus */
 /** @typedef { import('../types').AvailableSink } AvailableSink */
@@ -86,7 +87,6 @@ function makeCount(subscribe, messageSink, sendAvailable) {
 
 	/** @param { Message } message */
 	const handler = (message) => {
-		console.log('MESSAGE', message);
 		switch (message.kind) {
 			case 'update': {
 				if (sink) {

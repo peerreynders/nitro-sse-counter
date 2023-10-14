@@ -6,6 +6,7 @@
 
 /** @typedef { object } Binder
  * @property { HTMLParagraphElement } root
+ * @property { Text } text
  * @property { () => void } unsubscribe
  */
 
@@ -19,7 +20,7 @@ const noOp = () => {};
  */
 function onStatus(binder, status) {
 	if (status.error) binder.root.classList.add(MODIFIER_ERROR);
-	binder.root.textContent = status.message;
+	binder.text.nodeValue = status.message;
 }
 
 /** @param { (fn: StatusSink) => (() => void) } subscribe
@@ -36,8 +37,10 @@ function makeSpec(subscribe) {
 
 			const binder = {
 				root: element,
+				text: new Text(''),
 				unsubscribe: noOp,
 			};
+			binder.root.appendChild(binder.text);
 			binder.unsubscribe = subscribe((status) => onStatus(binder, status));
 
 			instances.set(element, binder);

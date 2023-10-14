@@ -6,24 +6,25 @@ import {
 	type CounterRecord,
 } from '../server/counter';
 
+import type { EventHandlerRequest, H3Event } from 'h3';
+
 function notifyObservers(record: void | CounterRecord) {
 	if (!record) return;
 
 	counterHooks.callHook(record.id, record.count, record.lastEventId);
 }
 
-const makeUpdateBroadcast = (counterId: string) => () =>
-	increment(counterId).then(notifyObservers);
+const makeUpdateBroadcast = (event: H3Event<EventHandlerRequest>) => () =>
+	increment(event).then(notifyObservers);
 
 export default defineEventHandler(async (event) => {
-	const record = (await counterRecordFromEvent(event)) ?? undefined;
-
+	const record = await counterRecordFromEvent(event);
 	if (!record) {
 		sendNoContent(event, 409);
 		return;
 	}
 
 	// non-ejectable, non-duplicated task
-	submitTask(makeUpdateBroadcast(record.id), record.id);
+	submitTask(makeUpdateBroadcast(event), record.id);
 	sendNoContent(event, 202);
 });

@@ -7,6 +7,8 @@ type SessionRecord = {
 	counterId: string;
 };
 
+const CONTEXT_SESSION_ID = 'session-id';
+
 if (!process.env.SESSION_SECRET) throw Error('SESSION_SECRET must be set');
 
 const config: SessionConfig = {
@@ -35,4 +37,4 @@ async function refreshCounterId(event: H3Event<EventHandlerRequest>) {
 	return counterId;
 }
 
-export { refreshCounterId, sessionFromEvent };
+export { CONTEXT_SESSION_ID, refreshCounterId, sessionFromEvent };

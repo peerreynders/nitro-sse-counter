@@ -1,5 +1,5 @@
 // file: src/api/counter.ts
-import { refreshCounterId } from '../server/session';
+import { CONTEXT_SESSION_ID, refreshCounterId } from '../server/session';
 import { makeEventStream, type SourceController } from '../server/event-stream';
 import { submitTask } from '../server/task-queue';
 import {
@@ -8,11 +8,6 @@ import {
 	type CountDispatch,
 	type CounterRecord,
 } from '../server/counter';
-
-const makeCleanup = (id: string, unsubscribe: () => void) => () => {
-	unsubscribe();
-	dropObserver(id);
-};
 
 function submitCountUnicast(record: CounterRecord, dispatch: CountDispatch) {
 	const task = () => {
@@ -27,24 +22,27 @@ function submitCountUnicast(record: CounterRecord, dispatch: CountDispatch) {
 	submitTask(task, record.id, true);
 }
 
-function makeInitFn(record: CounterRecord) {
+function makeInitFn(record: CounterRecord, sessionId: string) {
 	return function init(controller: SourceController) {
 		const { send, close } = controller;
 		const dispatch = (count: number, id: string) => {
 			send(String(count), id);
 			if (count > 9) close();
 		};
-		console.log('RECORD', record);
 		const unsubscribe = counterHooks.hook(record.id, dispatch);
 		submitCountUnicast(record, dispatch);
 
-		return makeCleanup(record.id, unsubscribe);
+    return function cleanup() {
+			unsubscribe();
+			dropObserver(record.id, sessionId);
+		};
 	};
 }
 
 export default defineEventHandler(async (event) => {
 	const record = await addObserver(event, refreshCounterId);
-	const init = makeInitFn(record);
+	const sessionId = event.context[CONTEXT_SESSION_ID] as string;
+	const init = makeInitFn(record, sessionId);
 
 	setHeader(event, 'cache-control', 'no-cache');
 	setHeader(event, 'connection', 'keep-alive');

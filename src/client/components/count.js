@@ -7,6 +7,7 @@
 
 /** @typedef { object } Binder
  * @property { HTMLElement } root
+ * @property { Text } text
  * @property { boolean } disabled
  * @property { (() => void)[] } unsubscribes
  */
@@ -44,7 +45,7 @@ function onAvailable(binder, status) {
  * @return { void }
  */
 function onCount(binder, count) {
-	binder.root.textContent = String(count);
+	binder.text.nodeValue = String(count);
 }
 
 /** @param { (fn: CountSink) => (() => void) } subscribeCount
@@ -58,11 +59,13 @@ function makeSpec(subscribeCount, subscribeAvailable) {
 	/** @type { Spec } */
 	const spec = {
 		mounted(element) {
-			if (!(element instanceof HTMLElement)) return;
+			const text = element.childNodes[0];
+			if (!((element instanceof HTMLElement) && (text instanceof Text))) return;
 
 			/** @type { Binder } */
 			const binder = {
 				root: element,
+				text,
 				disabled: element.classList.contains(MODIFIER_DISABLED),
 				unsubscribes: [],
 			};
