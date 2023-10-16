@@ -1,3 +1,4 @@
+// file: src/server/task-queue.ts
 type TaskRecord = {
 	task: () => void;
 	priorityId: string | undefined;
@@ -15,24 +16,12 @@ const makeTaskRecord = (
 	eject: boolean = false
 ) => ({ task, priorityId, eject, next: undefined });
 
-function appendEjectable(head: TaskRecord, last: TaskRecord) {
-	let record = head;
-	for (; record.next; record = record.next);
-	record.next = last;
-}
-
 let queuedId: ReturnType<typeof setTimeout> | undefined;
 const taskQueue: TaskRecord[] = [];
 
-function ejectTasks(record: TaskRecord) {
-	for (let next = record; next; next = record.next) {
-		const index = taskQueue.indexOf(next);
-		if (index > -1) taskQueue.splice(index, 1);
-	}
-}
-
 const priorityMap: PriorityMap = new Map();
 
+// Process **everything** on the queue
 function runQueue() {
 	priorityMap.clear();
 	for (let i = 0; i < taskQueue.length; i += 1) taskQueue[i].task();
@@ -48,6 +37,28 @@ function queueTask(record: TaskRecord) {
 	queuedId = setTimeout(runQueue, RUN_DELAY);
 }
 
+// For non-ejectable or first ejectable tasks
+function queueTaskWithId(record: TaskRecord) {
+	priorityMap.set(record.priorityId, record);
+	queueTask(record);
+}
+
+// For ejectable tasks after the first
+function appendEjectable(head: TaskRecord, last: TaskRecord) {
+	let record = head;
+	for (; record.next; record = record.next);
+	record.next = last;
+
+	queueTask(record);
+}
+
+function ejectTasks(record: TaskRecord) {
+	for (let next = record; next; next = record.next) {
+		const index = taskQueue.indexOf(next);
+		if (index > -1) taskQueue.splice(index, 1);
+	}
+}
+
 function submitTask(
 	task: () => void,
 	priorityId?: string,
@@ -60,7 +71,7 @@ function submitTask(
 
 	const found = priorityMap.get(priorityId);
 	if (!found) {
-		queueTask(makeTaskRecord(task, priorityId, eject));
+		queueTaskWithId(makeTaskRecord(task, priorityId, eject));
 		return;
 	}
 
@@ -71,16 +82,14 @@ function submitTask(
 
 	const record = makeTaskRecord(task, priorityId, eject);
 
-	if (!record.eject) {
-		// new task will replace ejectables
-		ejectTasks(found);
-		priorityMap.set(priorityId, record);
-	} else {
-		// another ejectable
+	if (record.eject) {
 		appendEjectable(found, record);
+		return; 
 	}
 
-	queueTask(record);
+	// new task will replace ejectables
+	ejectTasks(found);
+	queueTaskWithId(record);
 }
 
 export { submitTask };

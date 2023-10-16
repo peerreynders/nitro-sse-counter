@@ -1,3 +1,4 @@
+// file: src/utils/hooks.ts
 import { createHooks } from 'hookable';
 import type { CountDispatch } from '../server/counter';
 

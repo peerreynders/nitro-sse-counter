@@ -1,3 +1,4 @@
+// file: src/server/session.ts
 import crypto from 'uncrypto';
 import { updateSession, getSession, type SessionConfig } from 'h3';
 

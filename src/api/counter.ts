@@ -32,7 +32,7 @@ function makeInitFn(record: CounterRecord, sessionId: string) {
 		const unsubscribe = counterHooks.hook(record.id, dispatch);
 		submitCountUnicast(record, dispatch);
 
-    return function cleanup() {
+		return function cleanup() {
 			unsubscribe();
 			dropObserver(record.id, sessionId);
 		};

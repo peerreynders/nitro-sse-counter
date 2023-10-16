@@ -48,6 +48,22 @@ function onCount(binder, count) {
 	binder.text.nodeValue = String(count);
 }
 
+/** @param { Element } root
+ * @return { Text }
+ */
+function ensureTextNode(root) {
+	const first = root.firstChild;
+	if (first instanceof Text) return first;
+
+	const text = new Text('');
+	if (first) {
+		root.replaceChild(text, first);
+	} else {
+		root.appendChild(text);
+	}
+	return text;
+}
+
 /** @param { (fn: CountSink) => (() => void) } subscribeCount
  * @param { (fn: AvailableSink) => (() => void) } subscribeAvailable
  * @return { Spec }
@@ -59,9 +75,9 @@ function makeSpec(subscribeCount, subscribeAvailable) {
 	/** @type { Spec } */
 	const spec = {
 		mounted(element) {
-			const text = element.childNodes[0];
-			if (!((element instanceof HTMLElement) && (text instanceof Text))) return;
+			if (!(element instanceof HTMLElement)) return;
 
+			const text = ensureTextNode(element);
 			/** @type { Binder } */
 			const binder = {
 				root: element,

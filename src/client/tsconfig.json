@@ -16,8 +16,5 @@
 		"declaration": true,
 		"outDir": "types"
 	},
-	"files": [ 
-		"entry.js",
-		"index.d.ts"
-	]
+	"files": ["entry.js", "index.d.ts"]
 }

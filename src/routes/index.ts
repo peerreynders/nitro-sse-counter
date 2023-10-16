@@ -1,5 +1,9 @@
-export default defineEventHandler((_event) => {
+import { counterRecordFromEvent } from '../server/counter';
+
+export default defineEventHandler(async (event) => {
 	const title = 'SSE Counter';
+	const record = await counterRecordFromEvent(event);
+	const count = record ? String(record.count) : '&nbsp;';
 
 	// prettier-ignore
 	return (
@@ -15,7 +19,7 @@ export default defineEventHandler((_event) => {
 			'<div class="c-counter">' +
 				'<dl>' +
 					'<dt>Count</dt>' +
-					'<dd aria-live="assertive" class="c-counter__count js:c-count">0</dd>' +
+					`<dd aria-live="assertive" class="c-counter__count js:c-count">${count}</dd>` +
 				'</dl>' +
 				'<div class="c-counter__increment">' +
     			'<button class="js:c-trigger c-counter__button">Increment</button>' +
