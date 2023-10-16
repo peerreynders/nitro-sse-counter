@@ -1,4 +1,6 @@
 // @ts-check
+// file: src/client/entry.js
+
 import { define } from './components/registry';
 import * as count from './components/count';
 import * as status from './components/status';

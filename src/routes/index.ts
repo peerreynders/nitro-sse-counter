@@ -1,3 +1,4 @@
+// file: src/routes/index.ts
 import { counterRecordFromEvent } from '../server/counter';
 
 export default defineEventHandler(async (event) => {

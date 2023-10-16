@@ -83,55 +83,78 @@ import { CONTEXT_SESSION_ID, refreshCounterId } from '../server/session';
 import { makeEventStream, type SourceController } from '../server/event-stream';
 import { submitTask } from '../server/task-queue';
 import {
-	addObserver,
-	dropObserver,
-	type CountDispatch,
-	type CounterRecord,
+  addObserver,
+  dropObserver,
+  type CountDispatch,
+  type CounterRecord,
 } from '../server/counter';
 
 function submitCountUnicast(record: CounterRecord, dispatch: CountDispatch) {
-	const task = () => {
-		dispatch(record.count, record.lastEventId);
-	};
+  const task = () => {
+    dispatch(record.count, record.lastEventId);
+  };
 
-	// ejectable by non-ejectable task
-	// with same priority (counter) id
-	//   i.e. the `increment` will notify the observer
-	//   of the latest value already
-	//
-	submitTask(task, record.id, true);
+  // ejectable by non-ejectable task
+  // with same priority (counter) id
+  //   i.e. the `increment` will notify the observer
+  //   of the latest value already
+  //
+  submitTask(task, record.id, true);
 }
 
 function makeInitFn(record: CounterRecord, sessionId: string) {
-	return function init(controller: SourceController) {
-		const { send, close } = controller;
-		const dispatch = (count: number, id: string) => {
-			send(String(count), id);
-			if (count > 9) close();
-		};
-		const unsubscribe = counterHooks.hook(record.id, dispatch);
-		submitCountUnicast(record, dispatch);
+  return function init(controller: SourceController) {
+    const { send, close } = controller;
+    const dispatch = (count: number, id: string) => {
+      send(String(count), id);
+      if (count > 9) close();
+    };
+    const unsubscribe = counterHooks.hook(record.id, dispatch);
+    submitCountUnicast(record, dispatch);
 
-		return function cleanup() {
-			unsubscribe();
-			dropObserver(record.id, sessionId);
-		};
-	};
+    return function cleanup() {
+      unsubscribe();
+      dropObserver(record.id, sessionId);
+    };
+  };
 }
 
 export default defineEventHandler(async (event) => {
-	const record = await addObserver(event, refreshCounterId);
-	const sessionId = event.context[CONTEXT_SESSION_ID] as string;
-	const init = makeInitFn(record, sessionId);
+  const record = await addObserver(event, refreshCounterId);
+  const sessionId = event.context[CONTEXT_SESSION_ID] as string;
+  const init = makeInitFn(record, sessionId);
 
-	setHeader(event, 'cache-control', 'no-cache');
-	setHeader(event, 'connection', 'keep-alive');
-	setHeader(event, 'content-type', 'text/event-stream');
-	setResponseStatus(event, 200);
+  setHeader(event, 'cache-control', 'no-cache');
+  setHeader(event, 'connection', 'keep-alive');
+  setHeader(event, 'content-type', 'text/event-stream');
+  setResponseStatus(event, 200);
 
-	return makeEventStream(event.node.req, init);
+  return makeEventStream(event.node.req, init);
 });
 ```
+
+Every export in the `utils` directory or its subdirectories [becomes available globally](https://nitro.unjs.io/guide/utils).
+So `counterHooks` is available throughout the server. 
+
+The ID to a `CounterRecord` is used as the key to `counterHooks`.
+This key acts much in the same way as an event `type` identifier (e.g. `click`). 
+It allows **multiple** (`CountDispatch`) callbacks to be registered against a single key.
+
+`const unsubscribe = counterHooks.hook(record.id, dispatch)` registers the `dispatch` callback the `record.id` key, returning an `unsubscribe` thunk for unregistering later. 
+In the [increment endpoint](#increment-endpoint) `counterHooks.callHook(record.id, record.count, record.lastEventId)` is then used to invoke all `CounterDispatch` callbacks registered against `record.id` with the arguments `(record.count, record.lastEventId)`.
+
+```TypeScript
+// file: src/utils/hooks.ts
+import { createHooks } from 'hookable';
+import type { CountDispatch } from '../server/counter';
+
+export interface CounterHooks {
+	[key: string]: CountDispatch;
+}
+
+export const counterHooks = createHooks<CounterHooks>();
+```
+
 
 ### Session
 
@@ -326,7 +349,20 @@ The `CounterRecords` are managed with the nitro [storage layer](https://nitro.un
 
 The module exports:
 - `addObserver` adds a new `CounterRecord` when there is no counter with a matching `counterId`; otherwise it increments the observer count and updates the stored `CounterRecord`.
--
+- `dropObserver` decrements the observer count and updates the stored `CounterRecord` unless there are no more observers, in which case the `CounterRecord` is removed entirely.
+- `increment` increments the count of the `CounterRecord` and updates it.
+- `counterRecordFromEvent` retrieves the `CounterRecord` associated with the current session if there is one.
+
+Each of these functions queue a `TaskRecord` on `taskQueue` (distinct from `src/server/task-queue.ts`) in order to prevent racing conditions against a shared record by separate clients. The `TaskRecord`'s is the session ID, **not** counter ID. This makes it possible to queue an `addObserver` task on the queue even in the *absense* of a counter ID (when the `CounterRecord` doesn't yet exist).
+
+To be clear: tasks for different session IDs (different `CounterRecords`) are allowed to execute concurrently. Tasks for the same session ID (same `CounterRecord`) have to run sequentially.
+
+- When a task is added to the `taskQueue` the task isn't run if there already is a task on the queue for the same session ID.
+- When the task added is to the queue and it is the first task of that session ID `runTasks` is launched immedately. Once the task completes, the task is removed form the queue and the queue is checked for new tasks belonging to that session ID and if any are found they are run in insertion order. 
+
+`locate` is simply an object with a `withId` and `countWithId` function.
+In synchronous code sections it is perfectly safe to set `locate.id` and then use either function in order to avoid creating fresh one off function experessions. 
+The [class expession](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/class) is used to ensure that the [arrow function's](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/Arrow_functions) `this` refers to the `locate` object.
 
 ```TypeScript
 // file: src/server/counter.ts
@@ -366,13 +402,12 @@ async function runTasks(record: TaskRecord) {
   for (
     ;
     typeof record !== 'undefined';
-    record = taskQueue.find(locate.withId)
+    locate.id = record.id, record = taskQueue.find(locate.withId)
   ) {
     await record.task();
 
     const index = taskQueue.indexOf(record);
     taskQueue.splice(index, 1);
-    locate.id = record.id;
   }
 }
 
@@ -516,20 +551,553 @@ export {
 };
 ```
 
-Every export in the `utils` directory or its subdirectories [becomes available globally](). So `counterHooks` is avaialble throughpout the server.
+### Increment Endpoint
+
+The handler first verifies that the `CounterRecord` exists before it proceeds to submit a task to increment the count and notify all of its observers.
+[`callHook`](https://github.com/unjs/hookable#async-callhook-name-args) is used to broadcast the updated count to the observing clients.
 
 ```TypeScript
-// file: src/utils/hooks.ts
-import { createHooks } from 'hookable';
-import type { CountDispatch } from '../server/counter';
+// file: src/api/increment.post.ts
+import { submitTask } from '../server/task-queue';
+import {
+  counterRecordFromEvent,
+  increment,
+  type CounterRecord,
+} from '../server/counter';
 
-export interface CounterHooks {
-	[key: string]: CountDispatch;
+import type { EventHandlerRequest, H3Event } from 'h3';
+
+function notifyObservers(record: void | CounterRecord) {
+  if (!record) return;
+
+  counterHooks.callHook(record.id, record.count, record.lastEventId);
 }
 
-export const counterHooks = createHooks<CounterHooks>();
+const makeUpdateBroadcast = (event: H3Event<EventHandlerRequest>) => () =>
+  increment(event).then(notifyObservers);
+
+export default defineEventHandler(async (event) => {
+  const record = await counterRecordFromEvent(event);
+  if (!record) {
+    sendNoContent(event, 409);
+    return;
+  }
+
+  // non-ejectable, non-duplicated task
+  submitTask(makeUpdateBroadcast(event), record.id);
+  sendNoContent(event, 202);
+});
 ```
 
----
+### Client Page Endpoint
+
+Renders the static HTML portion of the page while injecting the current count of the `CounterRecord` if one already exist. The `CounterRecord` will only be created once the first page's `main.js` script attempts to connect to the [Event Source](https://developer.mozilla.org/en-US/docs/Web/API/EventSource) at `/api/counter`.
+
+```TypeScript
+// file: src/routes/index.ts
+import { counterRecordFromEvent } from '../server/counter';
+
+export default defineEventHandler(async (event) => {
+  const title = 'SSE Counter';
+  const record = await counterRecordFromEvent(event);
+  const count = record ? String(record.count) : '&nbsp;';
+
+  // prettier-ignore
+  return (
+    '<!doctype html><html lang="en"><head>' +
+    	'<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+    	`<title>Nitro - ${title}</title>` +
+    	'<link rel="icon" href="favicon.ico">' +
+			'<link href="https://fonts.googleapis.com/css?family=IBM+Plex+Sans:400,600&amp;display=swap" rel="stylesheet">' +
+			'<link rel="stylesheet" href="styles.css">' +
+			'<script type="module" src="main.js"></script>' +
+    '</head><body>' +
+			`<h1>${title}</h1>` +
+			'<div class="c-counter">' +
+				'<dl>' +
+					'<dt>Count</dt>' +
+					`<dd aria-live="assertive" class="c-counter__count js:c-count">${count}</dd>` +
+				'</dl>' +
+				'<div class="c-counter__increment">' +
+    			'<button class="js:c-trigger c-counter__button">Increment</button>' +
+					'<p aria-live="assertive" class="js:c-status c-counter__status"></p>' +
+				'</div>' +
+			'</div>' +
+			'<footer>' +
+				'<div class="center">' +
+					'<p>Served with <a href="https://unjs.io/">UnJS</a> <a href="https://nitro.unjs.io/">Nitro</a>.</p>' +
+					'<p>Frontend' +
+						'<ul>' +
+							'<li>Using <a href="https://github.com/WebReflection/qsa-observer">qsa-observer</a></li>' +
+							'<li>Type checked with ' +
+								'<a href="https://www.typescriptlang.org/docs/handbook/jsdoc-supported-types.html">TS JSDoc</a>.' +
+							'</li>' +
+							'<li>Bundled with <a href="https://rollupjs.org/">Rollup</a>.</li>' +
+							'<li>Design repurposed from <a href="https://codepen.io/sandrina-p/pen/WNRYabB">here</a>.</li>' +
+							'<li>CSS reset from <a href="https://andy-bell.co.uk/a-more-modern-css-reset/">here</a>.</li>' +
+						'</ul>' +
+					'</p>' +
+				'</div>' +
+			'</footer>' +
+    '</body></html>'
+  );
+});
+```
+
+## Client 
+
+The client application starts with `assembleApp()` which constructs the `inbound` and `outbound` dependencies before injecting them into app factory. Once assembled `hookupUI()` makes it possible for the UI components to connect to the requisite capabilities of the core app.
+
+```JavaScript
+// @ts-check
+// file: src/client/entry.js
+
+import { define } from './components/registry';
+import * as count from './components/count';
+import * as status from './components/status';
+import * as trigger from './components/trigger';
+import { makeInbound } from './app/inbound';
+import { makeOutbound } from './app/outbound';
+import { makeApp } from './app/index';
+
+/** @typedef { ReturnType<typeof makeApp> } App */
+
+function assembleApp() {
+	const inbound = makeInbound('/api/counter');
+	const outbound = makeOutbound('/api/increment');
+	return makeApp({ inbound, outbound });
+}
+
+/** @param { App } app
+ * @returns { void }
+ */
+function hookupUI(app) {
+	define(
+		count.NAME,
+		count.makeSpec(app.subscribeCount, app.subscribeAvailable)
+	);
+	define(status.NAME, status.makeSpec(app.subscribeStatus));
+	define(trigger.NAME, trigger.makeSpec(app.increment, app.subscribeAvailable));
+	app.start();
+}
+
+hookupUI(assembleApp());
+```
+
+### App
+
+#### Core App
+
+The core app consists of four parts:
+
+- `status` The routing point for any status displays to the UI. Any status message to be displayed must go through `status.send()`. `status` is only designed to accept a single observer (the `status` component). 
+- `context` The routing point for the current `availableStatus`. Any change must go through `context.sendAvailable()`. The context receives `status` as a dependency as it sends an "error" or "end of count" status display when `availableStatus` becomes `UNAVAILABLE`. The `context` has a `messageSink` callback to receive inbound `end` or `error` messages. It is designed to accept multiple observers (`increment`, `trigger` and `count` components).  
+- `count` Subscribes to `inbound` messages and forwards `error` and `end` messages via `context.messageSink`. It processes the `update` by updating its single observer (`count` component) and uses `context.sendAvailable` to set the `availableStatus` (from `WAIT`) to `READY`. 
+- `increment` issues an `increment` command to `outbound` right after it sets the `availableStatus` (from `READY`) to `WAIT`. If its command is not `accepted` it switches the `availableStatus` to `UNAVAILABLE`.
+
+The exposed App API consist of:
+- `increment` to dispatch an `increment` command.
+- `start` to establish the inbound connection.
+- `subscribeAvailable` to subscribe to the current `availableStatus`.
+- `subscribeStatus` to subscribe to the latest status text.
+- `subscribeCount` to subscribe to the latest count.
+
+The App starts out in
+- `READY` to issue an increment command
+- `WAIT` while waiting for an increment command to complete.
+- `UNAVAILABLE` is entered when either an error is encounter while trying to establish a connection or because the count was ended by the server. 
+
+```JavaScript
+// @ts-check
+// file: src/client/app/index.js
+/** @typedef { import('../types').CountSink } CountSink */
+/** @typedef { import('../types').AvailableStatus } AvailableStatus */
+/** @typedef { import('../types').AvailableSink } AvailableSink */
+/** @typedef { import('../types').CountMessage } Message */
+/** @typedef { import('../types').Inbound } Inbound */
+/** @typedef { import('../types').Outbound } Outbound */
+/** @typedef { import('../types').Status } Status */
+/** @typedef { import('../types').StatusSink } StatusSink */
+
+import { Sinks } from '../lib/sinks';
+import { availableStatus } from './available';
+
+/** @param { StatusSink } sendStatus */
+function makeContext(sendStatus) {
+  /** @type { Status | undefined } */
+  let status = {
+    error: true,
+    message: 'Connection failed. Reload to retry.',
+  };
+  // Once status is undefined we're done
+
+  /** @type { Sinks<AvailableStatus> } */
+  const sinks = new Sinks();
+
+  const context = {
+    /** @type { AvailableStatus } */
+    available: availableStatus.READY,
+
+    /** @param { Message } message */
+    messageSink: (message) => {
+      switch (message.kind) {
+        case 'end': {
+          status = {
+            error: false,
+            message: 'Count complete. Reload to restart.',
+          };
+          break;
+        }
+
+        case 'error':
+          break;
+
+        default:
+          return;
+      }
+
+      context.sendAvailable(availableStatus.UNAVAILABLE);
+    },
+
+    /** @param { AvailableStatus } available
+     */
+    sendAvailable: (available) => {
+      if (!status) return;
+
+      context.available = available;
+      sinks.send(available);
+
+      if (available === availableStatus.UNAVAILABLE) {
+        sendStatus(status);
+        status = undefined;
+      }
+    },
+
+    /** @param { AvailableSink } sink
+     */
+    subscribe: (sink) => {
+      const unsubscribe = sinks.add(sink);
+      sink(context.available);
+      return unsubscribe;
+    },
+  };
+
+  return context;
+}
+
+/** @param { Inbound['subscribe'] } subscribe
+ * @param { (message: Message) => void } messageSink
+ * @param { AvailableSink } sendAvailable
+ */
+function makeCount(subscribe, messageSink, sendAvailable) {
+  /** @type { CountSink | undefined } */
+  let sink;
+  /** @type { (() => void) | undefined } */
+  let unsubscribe;
+
+  /** @param { Message } message */
+  const handler = (message) => {
+    switch (message.kind) {
+      case 'update': {
+        if (sink) {
+          sink(message.count);
+        }
+        sendAvailable(availableStatus.READY);
+        return;
+      }
+
+      case 'error':
+      case 'end': {
+        if (unsubscribe) unsubscribe();
+        messageSink(message);
+        return;
+      }
+    }
+  };
+
+  const count = {
+    /** @param { CountSink } nextSink
+     * @return { () => void }
+     */
+    subscribe: (nextSink) => {
+      sink = nextSink;
+      return () => {
+        if (sink === nextSink) sink = undefined;
+      };
+    },
+
+    /** @type { (() => void) | undefined } */
+    unsubscribe: (() => {
+      const removeHandler = subscribe(handler);
+      const dispose = () => {
+        count.unsubscribe = unsubscribe = undefined;
+        removeHandler();
+      };
+      return dispose;
+    })(),
+  };
+
+  return count;
+}
+
+/** @param { () => Promise<boolean> } incrementFn
+ * @param { AvailableSink } sendAvailable
+ */
+function makeIncrement(incrementFn, sendAvailable) {
+  /** @param { boolean } accepted */
+  const postIncrement = (accepted) => {
+    if (accepted) return;
+
+    sendAvailable(availableStatus.UNAVAILABLE);
+  };
+
+  let done = false;
+
+  const increment = {
+    /** @type { AvailableSink } */
+    availableSink: (available) => {
+      if (done) return;
+
+      if (available === availableStatus.UNAVAILABLE) done = true;
+    },
+
+    /** @type { undefined | (() => void)} */
+    unsubscribe: undefined,
+
+    dispatch() {
+      if (done) return;
+
+      sendAvailable(availableStatus.WAIT);
+      incrementFn().then(postIncrement);
+    },
+  };
+
+  return increment;
+}
+
+function makeStatus() {
+  /** @type { undefined | StatusSink } */
+  let sink;
+
+  const status = {
+    /** @param { Status} message
+     * @return { void }
+     */
+    send: (message) => {
+      if (sink) sink(message);
+    },
+
+    /** @param { StatusSink } nextSink
+     * @return { () => void }
+     */
+    subscribe: (nextSink) => {
+      sink = nextSink;
+      return () => {
+        if (sink === nextSink) sink = undefined;
+      };
+    },
+  };
+
+  return status;
+}
+
+/** @param { {
+ *   inbound: Inbound
+ *   outbound: Outbound
+ * } } api
+ */
+function makeApp({ inbound, outbound }) {
+  const status = makeStatus();
+  const context = makeContext(status.send);
+  const count = makeCount(
+    inbound.subscribe,
+    context.messageSink,
+    context.sendAvailable
+  );
+  const increment = makeIncrement(outbound.increment, context.sendAvailable);
+
+  // Internal registrations
+  increment.unsubscribe = context.subscribe(increment.availableSink);
+
+  return {
+    increment: increment.dispatch,
+    start: inbound.start,
+    subscribeAvailable: context.subscribe,
+    subscribeStatus: status.subscribe,
+    subscribeCount: count.subscribe,
+  };
+}
+
+export { makeApp };
+```
+
+#### Inbound
+
+```JavaScript
+// @ts-check
+// file: src/client/app/inbound.js
+
+/** @typedef { import('../types.ts').CountEnd } CountEnd */
+/** @typedef { import('../types.ts').CountError } CountError */
+/** @typedef { import('../types.ts').CountMessage } CountMessage */
+/** @typedef { import('../types.ts').CountUpdate } CountUpdate */
+/** @typedef { import('../types.ts').Inbound } Inbound */
+/** @typedef { import('../types.ts').MessageSink } MessageSink */
+/** @typedef { EventListenerObject & {
+ *   status: undefined | boolean;
+ *   href: string;
+ *   sink: void | MessageSink;
+ *   source: void | EventSource;
+ * } } HandlerObject */
+
+/** @param { MessageSink } sink */
+function dispatchEnd(sink) {
+  /** @type { CountEnd } */
+  const message = {
+    kind: 'end',
+  };
+  sink(message);
+}
+
+/** @param { MessageSink } sink
+ */
+function dispatchError(sink) {
+  /** @type { CountError } */
+  const message = {
+    kind: 'error',
+    reason: 'Failed to open connection',
+  };
+  sink(message);
+}
+
+/** @param { MessageSink } sink
+ * @param { MessageEvent<string> } event
+ */
+function dispatchUpdate(sink, event) {
+  const count = Number(event.data);
+  if (Number.isNaN(count)) return;
+
+  /** @type { CountUpdate } */
+  const message = {
+    kind: 'update',
+    count,
+  };
+  sink(message);
+}
+
+/** @param { HandlerObject } router */
+function disposeRouter(router) {
+  if (router.source) {
+    router.source.removeEventListener('message', router);
+    router.source.removeEventListener('error', router);
+    if (router.source.readyState < 2) router.source.close();
+  }
+  router.source = undefined;
+  router.sink = undefined;
+  router.status = false;
+}
+
+/** @param { EventSource } source
+ * @param { HandlerObject } router
+ */
+function addRouter(source, router) {
+  source.addEventListener('message', router);
+  source.addEventListener('error', router);
+}
+
+/** @param { string } href
+ */
+function makeInbound(href) {
+  /** @type { HandlerObject } */
+  const eventRouter = {
+    status: undefined,
+    href,
+    sink: undefined,
+    source: undefined,
+    handleEvent(event) {
+      if (!this.sink || this.status === false) return;
+
+      if (event instanceof MessageEvent) {
+        this.status = true;
+        dispatchUpdate(this.sink, event);
+        return;
+      }
+
+      if (event.type === 'error') {
+        if (this.status === true) {
+          dispatchEnd(this.sink);
+        } else {
+          dispatchError(this.sink);
+        }
+        disposeRouter(this);
+      }
+    },
+  };
+
+  const start = () => {
+    eventRouter.source = new EventSource(eventRouter.href);
+    if (eventRouter.sink) {
+      addRouter(eventRouter.source, eventRouter);
+    }
+  };
+
+  /** @param { MessageSink } sink */
+  const subscribe = (sink) => {
+    const last = eventRouter.sink;
+    eventRouter.sink = sink;
+    if (!last && eventRouter.source) {
+      addRouter(eventRouter.source, eventRouter);
+    }
+
+    return () => {
+      if (eventRouter.sink === sink) {
+        eventRouter.sink = undefined;
+      }
+    };
+  };
+
+  /** @type { Inbound } */
+  return {
+    start,
+    subscribe,
+  };
+}
+
+export { makeInbound };
+```
+
+#### Outbound
+
+```JavaScript
+// @ts-check
+// file: src/client/app/outbound.js
+
+/** @param { string } href
+ */
+function makeOutbound(href) {
+  const increment = async () => {
+    const response = await fetch(href, { method: 'POST' });
+    return response.ok;
+  };
+
+  return {
+    increment,
+  };
+}
+
+export { makeOutbound };
+```
+
+### Components
+
+#### Registry
+
+#### Status
+
+#### Count
+
+#### Trigger
+
 
 … under construction … 
+

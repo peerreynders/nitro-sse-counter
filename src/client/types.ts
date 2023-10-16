@@ -35,12 +35,6 @@ export type StatusSink = (status: Status) => void;
 
 export type App = ReturnType<typeof makeApp>;
 
-export type ActionStatus = {
-	STOPPED: -1;
-	WAIT: 0;
-	READY: 1;
-};
-
 export type AvailableStatus =
 	(typeof availableStatus)[keyof typeof availableStatus];
 

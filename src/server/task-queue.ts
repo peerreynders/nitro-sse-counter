@@ -84,7 +84,7 @@ function submitTask(
 
 	if (record.eject) {
 		appendEjectable(found, record);
-		return; 
+		return;
 	}
 
 	// new task will replace ejectables

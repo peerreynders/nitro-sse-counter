@@ -35,13 +35,12 @@ async function runTasks(record: TaskRecord) {
 	for (
 		;
 		typeof record !== 'undefined';
-		record = taskQueue.find(locate.withId)
+		locate.id = record.id, record = taskQueue.find(locate.withId)
 	) {
 		await record.task();
 
 		const index = taskQueue.indexOf(record);
 		taskQueue.splice(index, 1);
-		locate.id = record.id;
 	}
 }
 

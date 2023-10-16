@@ -1,4 +1,5 @@
 // @ts-check
+// file: src/client/app/outbound.js
 
 /** @param { string } href
  */
