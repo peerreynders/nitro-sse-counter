@@ -17,8 +17,7 @@ import { availableStatus } from './app/available';
 
 			`function createClass(object specification)` Create a component
 			given a **specification**. … For more information about
-			the **«specification object»**, see Component Specs
-               and Lifecycle
+			the **«specification object»**, see Component Specs and Lifecycle
 			(https://shripadk.github.io/react/docs/component-specs.html).
 */
 export type QsaoSpec = {

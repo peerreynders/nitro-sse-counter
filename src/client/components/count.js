@@ -1,5 +1,5 @@
 // @ts-check
-// file: src/client/components/status.ts
+// file: src/client/components/count.ts
 /** @typedef { import('../types').QsaoSpec } Spec */
 /** @typedef { import('../types').AvailableSink } AvailableSink */
 /** @typedef { import('../types').AvailableStatus } AvailableStatus */
@@ -21,23 +21,11 @@ const MODIFIER_DISABLED = 'js:c-count--disabled';
  * @return { void }
  */
 function onAvailable(binder, status) {
-	switch (status) {
-		case availableStatus.UNAVAILABLE: {
-			if (!binder.disabled) {
-				binder.disabled = true;
-				binder.root.classList.add(MODIFIER_DISABLED);
-			}
-			return;
-		}
+	const isDisabled = status === availableStatus.UNAVAILABLE;
+	if (binder.disabled === isDisabled) return;
 
-		default: {
-			if (binder.disabled) {
-				binder.disabled = false;
-				binder.root.classList.remove(MODIFIER_DISABLED);
-			}
-			return;
-		}
-	}
+	binder.disabled = isDisabled;
+	binder.root.classList.toggle(MODIFIER_DISABLED, isDisabled);
 }
 
 /** @param { Binder } binder
@@ -45,6 +33,8 @@ function onAvailable(binder, status) {
  * @return { void }
  */
 function onCount(binder, count) {
+	if (binder.disabled) return;
+
 	binder.text.nodeValue = String(count);
 }
 

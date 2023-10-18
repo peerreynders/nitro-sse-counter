@@ -19,7 +19,7 @@ const noOp = () => {};
  * @return { void }
  */
 function onStatus(binder, status) {
-	if (status.error) binder.root.classList.add(MODIFIER_ERROR);
+	binder.root.classList.toggle(MODIFIER_ERROR, status.error);
 	binder.text.nodeValue = status.message;
 }
 

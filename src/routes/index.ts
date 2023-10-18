@@ -8,22 +8,22 @@ export default defineEventHandler(async (event) => {
 
 	// prettier-ignore
 	return (
-    '<!doctype html><html lang="en"><head>' +
-    	'<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
-    	`<title>Nitro - ${title}</title>` +
-    	'<link rel="icon" href="favicon.ico">' +
+		'<!doctype html><html lang="en"><head>' +
+			'<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+			`<title>Nitro - ${title}</title>` +
+			'<link rel="icon" href="favicon.ico">' +
 			'<link href="https://fonts.googleapis.com/css?family=IBM+Plex+Sans:400,600&amp;display=swap" rel="stylesheet">' +
 			'<link rel="stylesheet" href="styles.css">' +
 			'<script type="module" src="main.js"></script>' +
-    '</head><body>' +
+		'</head><body>' +
 			`<h1>${title}</h1>` +
 			'<div class="c-counter">' +
 				'<dl>' +
 					'<dt>Count</dt>' +
-					`<dd aria-live="assertive" class="c-counter__count js:c-count">${count}</dd>` +
+					`<dd aria-live="assertive" aria-disabled="false" class="c-counter__count js:c-count">${count}</dd>` +
 				'</dl>' +
 				'<div class="c-counter__increment">' +
-    			'<button class="js:c-trigger c-counter__button">Increment</button>' +
+					'<button class="js:c-trigger c-counter__button">Increment</button>' +
 					'<p aria-live="assertive" class="js:c-status c-counter__status"></p>' +
 				'</div>' +
 			'</div>' +
@@ -43,6 +43,6 @@ export default defineEventHandler(async (event) => {
 					'</p>' +
 				'</div>' +
 			'</footer>' +
-    '</body></html>'
-  );
+		'</body></html>'
+	);
 });

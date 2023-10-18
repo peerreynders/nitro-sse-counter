@@ -22,34 +22,18 @@ const noOp = () => {};
  * @return { void }
  */
 function onAvailable(binder, status) {
-	switch (status) {
-		case availableStatus.UNAVAILABLE: {
-			binder.root.classList.remove(MODIFIER_WAIT);
+	const [disabled, wait] =
+		status === availableStatus.READY
+			? [false, false]
+			: status === availableStatus.WAIT
+			? [true, true]
+			: [true, false];
 
-			binder.disabled = true;
-			binder.root.classList.add(MODIFIER_DISABLED);
-			binder.root.setAttribute('aria-disabled', 'true');
-			return;
-		}
+	binder.root.classList.toggle(MODIFIER_WAIT, wait);
 
-		case availableStatus.WAIT: {
-			binder.root.classList.add(MODIFIER_WAIT);
-
-			binder.disabled = true;
-			binder.root.classList.add(MODIFIER_DISABLED);
-			binder.root.setAttribute('aria-disabled', 'true');
-			return;
-		}
-
-		default: {
-			binder.root.classList.remove(MODIFIER_WAIT);
-
-			binder.disabled = false;
-			binder.root.classList.remove(MODIFIER_DISABLED);
-			binder.root.removeAttribute('aria-disabled');
-			return;
-		}
-	}
+	binder.disabled = disabled;
+	binder.root.classList.toggle(MODIFIER_DISABLED, disabled);
+	binder.root.setAttribute('aria-disabled', String(disabled));
 }
 
 /** @param { () => void } action

@@ -1,4 +1,6 @@
 // @ts-check
+// file: src/client/components/registry.js
+
 import Qsao from 'qsa-observer';
 
 /** @typedef { import('../types').QsaoSpec } Spec */

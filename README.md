@@ -1,6 +1,8 @@
 # nitro-sse-counter
 SSE POC with UnJS Nitro and a TS JSDoc frontend
 
+… still under construction … 
+
 ## Server
 
 ### Features
@@ -605,40 +607,40 @@ export default defineEventHandler(async (event) => {
   // prettier-ignore
   return (
     '<!doctype html><html lang="en"><head>' +
-    	'<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
-    	`<title>Nitro - ${title}</title>` +
-    	'<link rel="icon" href="favicon.ico">' +
-			'<link href="https://fonts.googleapis.com/css?family=IBM+Plex+Sans:400,600&amp;display=swap" rel="stylesheet">' +
-			'<link rel="stylesheet" href="styles.css">' +
-			'<script type="module" src="main.js"></script>' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+      `<title>Nitro - ${title}</title>` +
+      '<link rel="icon" href="favicon.ico">' +
+      '<link href="https://fonts.googleapis.com/css?family=IBM+Plex+Sans:400,600&amp;display=swap" rel="stylesheet">' +
+      '<link rel="stylesheet" href="styles.css">' +
+      '<script type="module" src="main.js"></script>' +
     '</head><body>' +
-			`<h1>${title}</h1>` +
-			'<div class="c-counter">' +
-				'<dl>' +
-					'<dt>Count</dt>' +
-					`<dd aria-live="assertive" class="c-counter__count js:c-count">${count}</dd>` +
-				'</dl>' +
-				'<div class="c-counter__increment">' +
-    			'<button class="js:c-trigger c-counter__button">Increment</button>' +
-					'<p aria-live="assertive" class="js:c-status c-counter__status"></p>' +
-				'</div>' +
-			'</div>' +
-			'<footer>' +
-				'<div class="center">' +
-					'<p>Served with <a href="https://unjs.io/">UnJS</a> <a href="https://nitro.unjs.io/">Nitro</a>.</p>' +
-					'<p>Frontend' +
-						'<ul>' +
-							'<li>Using <a href="https://github.com/WebReflection/qsa-observer">qsa-observer</a></li>' +
-							'<li>Type checked with ' +
-								'<a href="https://www.typescriptlang.org/docs/handbook/jsdoc-supported-types.html">TS JSDoc</a>.' +
-							'</li>' +
-							'<li>Bundled with <a href="https://rollupjs.org/">Rollup</a>.</li>' +
-							'<li>Design repurposed from <a href="https://codepen.io/sandrina-p/pen/WNRYabB">here</a>.</li>' +
-							'<li>CSS reset from <a href="https://andy-bell.co.uk/a-more-modern-css-reset/">here</a>.</li>' +
-						'</ul>' +
-					'</p>' +
-				'</div>' +
-			'</footer>' +
+      `<h1>${title}</h1>` +
+      '<div class="c-counter">' +
+        '<dl>' +
+          '<dt>Count</dt>' +
+          `<dd aria-live="assertive" aria-disabled="false" class="c-counter__count js:c-count">${count}</dd>` +
+        '</dl>' +
+        '<div class="c-counter__increment">' +
+          '<button class="js:c-trigger c-counter__button">Increment</button>' +
+          '<p aria-live="assertive" class="js:c-status c-counter__status"></p>' +
+        '</div>' +
+      '</div>' +
+      '<footer>' +
+        '<div class="center">' +
+          '<p>Served with <a href="https://unjs.io/">UnJS</a> <a href="https://nitro.unjs.io/">Nitro</a>.</p>' +
+          '<p>Frontend' +
+            '<ul>' +
+              '<li>Using <a href="https://github.com/WebReflection/qsa-observer">qsa-observer</a></li>' +
+              '<li>Type checked with ' +
+                '<a href="https://www.typescriptlang.org/docs/handbook/jsdoc-supported-types.html">TS JSDoc</a>.' +
+              '</li>' +
+              '<li>Bundled with <a href="https://rollupjs.org/">Rollup</a>.</li>' +
+              '<li>Design repurposed from <a href="https://codepen.io/sandrina-p/pen/WNRYabB">here</a>.</li>' +
+              '<li>CSS reset from <a href="https://andy-bell.co.uk/a-more-modern-css-reset/">here</a>.</li>' +
+            '</ul>' +
+          '</p>' +
+        '</div>' +
+      '</footer>' +
     '</body></html>'
   );
 });
@@ -663,22 +665,22 @@ import { makeApp } from './app/index';
 /** @typedef { ReturnType<typeof makeApp> } App */
 
 function assembleApp() {
-	const inbound = makeInbound('/api/counter');
-	const outbound = makeOutbound('/api/increment');
-	return makeApp({ inbound, outbound });
+  const inbound = makeInbound('/api/counter');
+  const outbound = makeOutbound('/api/increment');
+  return makeApp({ inbound, outbound });
 }
 
 /** @param { App } app
  * @returns { void }
  */
 function hookupUI(app) {
-	define(
-		count.NAME,
-		count.makeSpec(app.subscribeCount, app.subscribeAvailable)
-	);
-	define(status.NAME, status.makeSpec(app.subscribeStatus));
-	define(trigger.NAME, trigger.makeSpec(app.increment, app.subscribeAvailable));
-	app.start();
+  define(
+    count.NAME,
+    count.makeSpec(app.subscribeCount, app.subscribeAvailable)
+  );
+  define(status.NAME, status.makeSpec(app.subscribeStatus));
+  define(trigger.NAME, trigger.makeSpec(app.increment, app.subscribeAvailable));
+  app.start();
 }
 
 hookupUI(assembleApp());
@@ -933,6 +935,31 @@ export { makeApp };
 
 #### Inbound
 
+The `inbound` module isolates the core's dependency on the browser's [`EventSource`](https://developer.mozilla.org/en-US/docs/Web/API/EventSource).
+`eventRouter` is an [`EventListenerObject`](https://github.com/microsoft/TypeScript/blob/2e9e9a292cd10df6ca3425fa4367348067362d53/src/lib/dom.generated.d.ts#L8109-L8111) ([`handleEvent`](https://gist.github.com/WebReflection/35ca0e2ef2fb929143ea725f55bc0d63), [DOM Spec](https://dom.spec.whatwg.org/#interface-eventtarget)) used in lieu of the typical [`EventListener`](https://github.com/microsoft/TypeScript/blob/2e9e9a292cd10df6ca3425fa4367348067362d53/src/lib/dom.generated.d.ts#L8105-L8107) callback function. 
+
+Apart from the `handleEvent(event: Event)` method this particular `EventListenerObject` carries information relevant to the event context: 
+- `href` the url to connect the event source
+- `source` once the `EventSource` has been connected
+- at most one `sink`, a `MessageSink`
+- `status` the state of the message connection
+  - `undefined` not yet connected
+  - `true` connected and operational
+  - `false` errored or completed and therefore closed
+
+`makeInbound` exposes two functions:
+- `subscribe` to assign a `MessageSink` to the `eventRouter`
+- `start` which attempts to connect the event source with the configured `href` and then attaches `eventRouter` to `message` and `error` events at which point it is ready to emit `CountMessage`s.
+
+In this simple case the [`MessageEvent`](https://developer.mozilla.org/en-US/docs/Web/API/MessageEvent) will only ever hold the updated count on the [`data`](https://developer.mozilla.org/en-US/docs/Web/API/MessageEvent/data) property and the [`lastEventId`](https://developer.mozilla.org/en-US/docs/Web/API/MessageEvent/lastEventId) property is ignored. In practice any type of serialized `data` (preferably represented via a [discrimated union](https://www.typescriptlang.org/docs/handbook/2/narrowing.html#discriminated-unions)) could be attached. `MessageEvent`s can have [`type`](https://developer.mozilla.org/en-US/docs/Web/API/Event/type)s other than `'message'` for [custom events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#listening_for_custom_events). `lastEventId` is usually used implement the ability to catch up on past events after the event source looses the connection and automatically reconnects.
+
+- `dispatchUpdate` forwards the updated count to the `MessageSink` as a `CountUpdate`
+- `dispatchEnd` sends a `CountEnd` message to the `MessageSink`
+- `dispatchError` sends a `CountError` message to the `MessageSink`
+
+After receiving an error [`Event`](https://developer.mozilla.org/en-US/docs/Web/API/Event) it is assumed that the count has completed if the current `status === true` resulting in `dispatchEnd()`; otherwise `dispatchError()` is invoked.
+In either case the `eventRouter` is disposed of and cleaned up.
+
 ```JavaScript
 // @ts-check
 // file: src/client/app/inbound.js
@@ -1068,6 +1095,15 @@ export { makeInbound };
 
 #### Outbound
 
+The `outbound` module isolates the core's dependency on the browser's [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/fetch). 
+The `increment` command simply requests that the count on the counter record currently associated with the client session be incremented. 
+
+A return status of [`202 Accepted`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/202) indicates that the task has been queued and will completed *some time soon* (it's complete once the corresponding `MessageEvent` arrives via the [`inbound`](#inbound) event source).
+
+A return status of [`409 Conflict`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/409) indicates that the counter identified in the session no longer exists (i.e. there is no one left listening) and that the command cannot be honoured ([`404 Not Found`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404) is more closely associated the resource identified by the url (e.g. `/api/increment`)—given that the out of band session data is considered a different status seemed more appropriate).
+
+In this case the value of the response's [`ok`](https://developer.mozilla.org/en-US/docs/Web/API/Response/ok) property is enough to communicate success or failure of the `increment` command to the core.
+ 
 ```JavaScript
 // @ts-check
 // file: src/client/app/outbound.js
@@ -1090,14 +1126,391 @@ export { makeOutbound };
 
 ### Components
 
+The component modules isolate the core app from the browser's [DOM API](https://developer.mozilla.org/en-US/docs/Web/API/Document_Object_Model). The [`registry`](#registry) handle the component lifecycles.
+
 #### Registry
+
+This simple component registry uses the [`querySelectAll` Observer](https://github.com/WebReflection/qsa-observer) which itself is based on [`MutationObserver`](https://developer.mozilla.org/en-US/docs/Web/API/MutationObserver).
+
+```TypeScript
+// file: src/client/types.ts
+// … 
+
+/*
+  A specification object
+  (https://gist.github.com/benpriebe/55b7e950b5e9d056b47e?permalink_comment_id=2229105#gistcomment-2229105)
+  is a configurations/customizations "bag" that is passed
+  to a factory or builder function to configure and/or
+  customize the item under assembly.
+
+  Douglas Crockford also called them _Object Specifiers_
+    in _JavaScript: The Good Parts_.
+
+  The term was also used in the original
+  (https://shripadk.github.io/react/docs/top-level-api.html#react.createclass)
+  React documentation:
+
+      `function createClass(object specification)` Create a component
+      given a **specification**. … For more information about
+      the **«specification object»**, see Component Specs and Lifecycle
+      (https://shripadk.github.io/react/docs/component-specs.html).
+*/
+export type QsaoSpec = {
+  mounted?: (element: Element) => void;
+  unmounted?: (element: Element) => void;
+};
+
+// … 
+```
+
+The `registry` [`Map`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map) maps a component to its `QsaoSpec`.
+The `QsaoSpec` can provide `mounted` and `unmounted` lifecycle functions.
+`mounted` is invoked when an element with the registered component `name` in its [`classList`](https://developer.mozilla.org/en-US/docs/Web/API/Element/classList) is inserted in to the DOM.
+`unmounted` is invoked when an element with the registered component `name` in its [`classList`](https://developer.mozilla.org/en-US/docs/Web/API/Element/classList) is removed from the DOM.
+
+The `define` function derives a [class selector](https://developer.mozilla.org/en-US/docs/Web/CSS/Class_selectors) from the supplied component name and stores the Qsao lifecycle spec in the `registry` `Map` before applying it to the current DOM state.
+
+```JavaScript
+// @ts-check
+// file: src/client/components/registry.js
+
+import Qsao from 'qsa-observer';
+
+/** @typedef { import('../types').QsaoSpec } Spec */
+
+// set up component registry
+/**  @type { Map<string, Spec> } */
+const registry = new Map();
+/** @type { string[] } */
+const query = [];
+const root = self.document;
+const qsao = Qsao({
+  query,
+  root,
+  handle(element, mounted, selector) {
+    const spec = registry.get(selector);
+    if (!spec) return;
+
+    (mounted ? spec.mounted : spec.unmounted)?.(element);
+  },
+});
+
+/** @param { string} name
+ * @param { Spec } spec
+ * @return { void }
+ */
+const define = (name, spec) => {
+  const selector = '.' + name;
+  if (query.includes(selector)) return;
+
+  query.push(selector);
+  registry.set(selector, spec);
+  qsao.parse(root.querySelectorAll(selector));
+};
+
+export { define };
+```
 
 #### Status
 
+The `status` component is the simplest of the components. 
+Before it can provide a `QsaoSpec` it needs to be supplied with a means to subscribe to the core app status.
+The `makeSpec` [factory function](https://www.javascripttutorial.net/javascript-factory-functions/) takes the required `subscribe` function and returns the `status`'s `QsaoSpec` needed for component registration.
+
+In the `mounted` lifecycle function a `Binder` object is stored in the `instances` [`WeakMap`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakMap) against the root element's object reference. The `Binder` holds:
+- `root` the element that represents the root of the component inside the DOM.
+- `text` the [`Text`](https://developer.mozilla.org/en-US/docs/Web/API/Text) to be updated with the status message (reportedly updating [`nodeValue`](https://developer.mozilla.org/en-US/docs/Web/API/Node/nodeValue) is faster than [`textContent`](https://developer.mozilla.org/en-US/docs/Web/API/Node/textContent))
+- `unsubscribe` to remove the subscription to the core app's status message updates.
+
+It's at this point that the component instance subscribes to the core app's status messages which are handled by `onStatus`.
+`onStatus` updates the `Text` node referenced in the binder and sets/reset the error class on the root element.
+
+The `unmounted` lifecycle function removes the status subscription and drops the `element`'s `Binder` from the `instances` `WeakMap`.
+
+```JavaScript
+// @ts-check
+// file: src/client/components/status.ts
+/** @typedef { import('../types').QsaoSpec } Spec */
+/** @typedef { import('../types').Status } Status */
+/** @typedef { import('../types').StatusSink } StatusSink */
+
+/** @typedef { object } Binder
+ * @property { HTMLParagraphElement } root
+ * @property { Text } text
+ * @property { () => void } unsubscribe
+ */
+
+const NAME = 'js\\:c-status';
+const MODIFIER_ERROR = 'js:c-status--error';
+const noOp = () => {};
+
+/** @param { Binder } binder
+ * @param { Status } status
+ * @return { void }
+ */
+function onStatus(binder, status) {
+  binder.root.classList.toggle(MODIFIER_ERROR, status.error);
+  binder.text.nodeValue = status.message;
+}
+
+/** @param { (fn: StatusSink) => (() => void) } subscribe
+ * @return { Spec }
+ */
+function makeSpec(subscribe) {
+  /** @type { WeakMap<Element, Binder> } */
+  const instances = new WeakMap();
+
+  /** @type { Spec } */
+  const spec = {
+    mounted(element) {
+      if (!(element instanceof HTMLParagraphElement)) return;
+
+      const binder = {
+        root: element,
+        text: new Text(''),
+        unsubscribe: noOp,
+      };
+      binder.root.appendChild(binder.text);
+      binder.unsubscribe = subscribe((status) => onStatus(binder, status));
+
+      instances.set(element, binder);
+    },
+    unmounted(element) {
+      const instance = instances.get(element);
+      if (!instance) return;
+
+      instance.unsubscribe();
+      instances.delete(element);
+    },
+  };
+
+  return spec;
+}
+
+export { NAME, makeSpec };
+```
+
 #### Count
+
+The `count` component displays the count but visually also communicates when the count has completed. So `makeSpec` has to be supplied with both `subscribeCount` and `subscribeAvailable` before the `QsaoSpec` needed for registration is produced.
+
+The `mounted` lifecycle function stores a `Binder` object in the `instances` `WeakMap` under the root element's reference.
+The `count`'s `Binder` holds:
+- `root` the element that acts as the root of the component inside the DOM.
+- `text` the `Text` node holding the most recent count value.
+- `disabled` reflecting the state of the counter.
+- `unsubscribes` an array that holds the `unsubscribe` thunks from `subscribeCount` and `subscribeAvailable`.
+
+The `onAvailable` callback compares the `availableStatus` to the component's `disabled` state. 
+`UNAVAILABLE` implies `disabled === true`. 
+If the state of `disabled` needs to be synchronized, the value is updated and the `MODIFIER_DISABLED` class is set on the root element accordingly.
+
+The `onCount` callback updates the `text` node to the specified `count`. 
+
+The `unmounted` lifecycle function invokes all the `unsubscribes` thunks and deletes the `Binder` from `instances`.
+
+```JavaScript
+// @ts-check
+// file: src/client/components/count.ts
+/** @typedef { import('../types').QsaoSpec } Spec */
+/** @typedef { import('../types').AvailableSink } AvailableSink */
+/** @typedef { import('../types').AvailableStatus } AvailableStatus */
+/** @typedef { import('../types').CountSink } CountSink */
+
+/** @typedef { object } Binder
+ * @property { HTMLElement } root
+ * @property { Text } text
+ * @property { boolean } disabled
+ * @property { (() => void)[] } unsubscribes
+ */
+import { availableStatus } from '../app/available';
+
+const NAME = 'js\\:c-count';
+const MODIFIER_DISABLED = 'js:c-count--disabled';
+
+/** @param { Binder } binder
+ * @param { AvailableStatus } status
+ * @return { void }
+ */
+function onAvailable(binder, status) {
+	const isDisabled = status === availableStatus.UNAVAILABLE;
+	if (binder.disabled === isDisabled) return;
+
+	binder.disabled = isDisabled;
+	binder.root.classList.toggle(MODIFIER_DISABLED, isDisabled);
+}
+
+/** @param { Binder } binder
+ * @param { number } count
+ * @return { void }
+ */
+function onCount(binder, count) {
+  if (binder.disabled) return;
+
+  binder.text.nodeValue = String(count);
+}
+
+/** @param { Element } root
+ * @return { Text }
+ */
+function ensureTextNode(root) {
+  const first = root.firstChild;
+  if (first instanceof Text) return first;
+
+  const text = new Text('');
+  if (first) {
+    root.replaceChild(text, first);
+  } else {
+    root.appendChild(text);
+  }
+  return text;
+}
+
+/** @param { (fn: CountSink) => (() => void) } subscribeCount
+ * @param { (fn: AvailableSink) => (() => void) } subscribeAvailable
+ * @return { Spec }
+ */
+function makeSpec(subscribeCount, subscribeAvailable) {
+  /** @type { WeakMap<Element, Binder> } */
+  const instances = new WeakMap();
+
+  /** @type { Spec } */
+  const spec = {
+    mounted(element) {
+      if (!(element instanceof HTMLElement)) return;
+
+      const text = ensureTextNode(element);
+      /** @type { Binder } */
+      const binder = {
+        root: element,
+        text,
+        disabled: element.classList.contains(MODIFIER_DISABLED),
+        unsubscribes: [],
+      };
+      binder.unsubscribes[0] = subscribeCount((count) =>
+        onCount(binder, count)
+      );
+      binder.unsubscribes[1] = subscribeAvailable((status) =>
+        onAvailable(binder, status)
+      );
+
+      instances.set(element, binder);
+    },
+    unmounted(element) {
+      const instance = instances.get(element);
+      if (!instance) return;
+
+      for (const unsubscribe of instance.unsubscribes) unsubscribe();
+
+      instances.delete(element);
+    },
+  };
+
+  return spec;
+}
+
+export { NAME, makeSpec };
+```
 
 #### Trigger
 
+The `trigger` component manages the button for the increment command/action. The `MODIFIER_DISABLED` class name relates to the disabled/enabled appearance, while `MODIFIER_WAIT` will further augment the disabled appearance to suggest that it will resolve in time (i.e. show a spinner). `makeSpec` has to be supplied with the `action` function to be invoked on `click` and a `subscribe` function for the `availableStatus` before it can furnish the `QsaoSpec` for component registration. 
 
-… under construction … 
+The `mounted` lifecycle functon stores a `Binder` object in the `instances` `Weakmap` under the [`HTMLButtonElement`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLButtonElement)'s reference. 
+The `trigger`'s `Binder` holds:
+- `root` the `HTMLButtonElement` representing the component in the DOM
+- `disabled` tracks whether the component is considered "disabled" (which is mirrored in the button's [`aria-disabled`](https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Attributes/aria-disabled) attribute)
+- `click` is the `click` listener that is used by the button element to invoke the `action`
+- `unsubscribe` to stop receiving `availableStatus` updates from the core app.
+
+The component subscribes to the app's `availableStatus` updates with the `onAvailable` callback and adds the `click` listener to the button elementi to trigger the `action`.
+
+The `onAvailable` callback synchronizes the button's appearance based on `availableStatus` updates:
+- `READY` component **is not** disabled or waiting
+- `WAIT` component **is** disabled and waiting (i.e. showing spinner)
+- `UNAVAILABLE` component **is** disabled but **is not** waiting (i.e. no spinner)
+
+The `unmounted` lifecycle function removes the `click` listener, `unsubscribe`s from `availableStatus` updates and removes the component's `Binder` from `instances`.
+
+```JavaScript
+// @ts-check
+// file: src/client/components/trigger.ts
+/** @typedef { import('../types').QsaoSpec } Spec */
+/** @typedef { import('../types').AvailableStatus } AvailableStatus */
+/** @typedef { import('../types').AvailableSink } AvailableSink */
+
+/** @typedef { object } Binder
+ * @property { HTMLButtonElement } root
+ * @property { boolean } disabled
+ * @property { () => void } click
+ * @property { () => void } unsubscribe
+ */
+import { availableStatus } from '../app/available';
+
+const NAME = 'js\\:c-trigger';
+const MODIFIER_DISABLED = 'js:c-trigger--disabled';
+const MODIFIER_WAIT = 'js:c-trigger--wait';
+const noOp = () => {};
+
+/** @param { Binder } binder
+ * @param { AvailableStatus } status
+ * @return { void }
+ */
+function onAvailable(binder, status) {
+  const [disabled, wait] =
+    status === availableStatus.READY
+      ? [false, false]
+      : status === availableStatus.WAIT
+      ? [true, true]
+      : [true, false];
+
+  binder.root.classList.toggle(MODIFIER_WAIT, wait);
+
+  binder.disabled = disabled;
+  binder.root.classList.toggle(MODIFIER_DISABLED, disabled);
+  binder.root.setAttribute('aria-disabled', String(disabled));
+}
+
+/** @param { () => void } action
+ * @param { (fn: AvailableSink) => (() => void) } subscribe
+ * @return { Spec }
+ */
+function makeSpec(action, subscribe) {
+  /** @type { WeakMap<Element, Binder> } */
+  const instances = new WeakMap();
+
+  /** @type { Spec } */
+  const spec = {
+    mounted(element) {
+      if (!(element instanceof HTMLButtonElement)) return;
+
+      const binder = {
+        root: element,
+        disabled: false,
+        click: () => {
+          if (binder.disabled) return;
+
+          action();
+        },
+        unsubscribe: noOp,
+      };
+      binder.unsubscribe = subscribe((status) => onAvailable(binder, status));
+      instances.set(element, binder);
+      binder.root.addEventListener('click', binder.click);
+    },
+    unmounted(element) {
+      const instance = instances.get(element);
+      if (!instance) return;
+
+      instance.unsubscribe();
+      instance.root.removeEventListener('click', instance.click);
+      instances.delete(element);
+    },
+  };
+
+  return spec;
+}
+
+export { NAME, makeSpec };
+```
 
