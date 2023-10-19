@@ -1,7 +1,15 @@
 # nitro-sse-counter
 SSE POC with UnJS Nitro and a TS JSDoc frontend
 
-… still under construction … 
+… still under construction …
+
+![Overview of the client-server organization](docs/assets/overview.jpg)
+
+![Client counter streeam connection activity diagram](docs/assets/connect-client.jpg)
+
+![Client initiated increment command activity diagram](docs/assets/increment-client.jpg)
+
+![Server increment broadcast activity diagram](docs/assets/increment-server.jpg)
 
 ## Server
 
@@ -693,8 +701,8 @@ hookupUI(assembleApp());
 The core app consists of four parts:
 
 - `status` The routing point for any status displays to the UI. Any status message to be displayed must go through `status.send()`. `status` is only designed to accept a single observer (the `status` component). 
-- `context` The routing point for the current `availableStatus`. Any change must go through `context.sendAvailable()`. The context receives `status` as a dependency as it sends an "error" or "end of count" status display when `availableStatus` becomes `UNAVAILABLE`. The `context` has a `messageSink` callback to receive inbound `end` or `error` messages. It is designed to accept multiple observers (`increment`, `trigger` and `count` components).  
-- `count` Subscribes to `inbound` messages and forwards `error` and `end` messages via `context.messageSink`. It processes the `update` by updating its single observer (`count` component) and uses `context.sendAvailable` to set the `availableStatus` (from `WAIT`) to `READY`. 
+- `context` The routing point for the current `availableStatus`. Every change must go through `context.sendAvailable()`. The context receives `status` as a dependency as it sends an "error" or "end of count" status display when `availableStatus` becomes `UNAVAILABLE` (due to a `CountError` or `CountEnd` message being received). `context` subscribes to `inbound` for `CountMessage`s; `CountUpdate` messages change the `availableStatus` from `WAIT` to `READY`. `context` is designed to accept multiple observers (`increment`, `trigger` and `count` components). 
+- `count` Subscribes to `inbound` messages and processes the `CountUpdate` by updating its single observer (`count` component). 
 - `increment` issues an `increment` command to `outbound` right after it sets the `availableStatus` (from `READY`) to `WAIT`. If its command is not `accepted` it switches the `availableStatus` to `UNAVAILABLE`.
 
 The exposed App API consist of:
@@ -724,8 +732,10 @@ The App starts out in
 import { Sinks } from '../lib/sinks';
 import { availableStatus } from './available';
 
-/** @param { StatusSink } sendStatus */
-function makeContext(sendStatus) {
+/** @param { Inbound['subscribe'] } subscribe
+ * @param { StatusSink } sendStatus
+ */
+function makeContext(subscribe, sendStatus) {
   /** @type { Status | undefined } */
   let status = {
     error: true,
@@ -740,39 +750,19 @@ function makeContext(sendStatus) {
     /** @type { AvailableStatus } */
     available: availableStatus.READY,
 
-    /** @param { Message } message */
-    messageSink: (message) => {
-      switch (message.kind) {
-        case 'end': {
-          status = {
-            error: false,
-            message: 'Count complete. Reload to restart.',
-          };
-          break;
-        }
-
-        case 'error':
-          break;
-
-        default:
-          return;
-      }
-
-      context.sendAvailable(availableStatus.UNAVAILABLE);
-    },
-
-    /** @param { AvailableStatus } available
-     */
+    /** @param { AvailableStatus } available */
     sendAvailable: (available) => {
       if (!status) return;
 
       context.available = available;
       sinks.send(available);
 
-      if (available === availableStatus.UNAVAILABLE) {
-        sendStatus(status);
-        status = undefined;
-      }
+      if (available !== availableStatus.UNAVAILABLE) return;
+
+      // signing off…
+      sendStatus(status);
+      status = undefined;
+      context.unsubscribe();
     },
 
     /** @param { AvailableSink } sink
@@ -782,42 +772,54 @@ function makeContext(sendStatus) {
       sink(context.available);
       return unsubscribe;
     },
+
+    unsubscribe: (() => {
+      /** @type { (() => void) | undefined } */
+      let remove = subscribe(handler);
+
+      return () => {
+        if (!remove) return;
+        remove();
+        remove = undefined;
+      };
+
+      /** @param { Message } message */
+      function handler(message) {
+        switch (message.kind) {
+          case 'end': {
+            status = {
+              error: false,
+              message: 'Count complete. Reload to restart.',
+            };
+            context.sendAvailable(availableStatus.UNAVAILABLE);
+            return;
+          }
+
+          case 'error': {
+            context.sendAvailable(availableStatus.UNAVAILABLE);
+            return;
+          }
+
+          default: {
+            if (context.available === availableStatus.WAIT)
+              context.sendAvailable(availableStatus.READY);
+            return;
+          }
+        }
+      }
+    })(),
   };
 
   return context;
 }
 
 /** @param { Inbound['subscribe'] } subscribe
- * @param { (message: Message) => void } messageSink
- * @param { AvailableSink } sendAvailable
  */
-function makeCount(subscribe, messageSink, sendAvailable) {
+function makeCount(subscribe) {
   /** @type { CountSink | undefined } */
   let sink;
-  /** @type { (() => void) | undefined } */
-  let unsubscribe;
 
-  /** @param { Message } message */
-  const handler = (message) => {
-    switch (message.kind) {
-      case 'update': {
-        if (sink) {
-          sink(message.count);
-        }
-        sendAvailable(availableStatus.READY);
-        return;
-      }
-
-      case 'error':
-      case 'end': {
-        if (unsubscribe) unsubscribe();
-        messageSink(message);
-        return;
-      }
-    }
-  };
-
-  const count = {
+  return {
     /** @param { CountSink } nextSink
      * @return { () => void }
      */
@@ -828,18 +830,21 @@ function makeCount(subscribe, messageSink, sendAvailable) {
       };
     },
 
-    /** @type { (() => void) | undefined } */
     unsubscribe: (() => {
-      const removeHandler = subscribe(handler);
-      const dispose = () => {
-        count.unsubscribe = unsubscribe = undefined;
-        removeHandler();
+      /** @type { (() => void) | undefined } */
+      let remove = subscribe(handler);
+      return () => {
+        if (!remove) return;
+        remove();
+        remove = undefined;
       };
-      return dispose;
+
+      /** @param { Message } message */
+      function handler(message) {
+        if (message.kind === 'update' && sink) sink(message.count);
+      }
     })(),
   };
-
-  return count;
 }
 
 /** @param { () => Promise<boolean> } incrementFn
@@ -910,12 +915,8 @@ function makeStatus() {
  */
 function makeApp({ inbound, outbound }) {
   const status = makeStatus();
-  const context = makeContext(status.send);
-  const count = makeCount(
-    inbound.subscribe,
-    context.messageSink,
-    context.sendAvailable
-  );
+  const context = makeContext(inbound.subscribe, status.send);
+  const count = makeCount(inbound.subscribe);
   const increment = makeIncrement(outbound.increment, context.sendAvailable);
 
   // Internal registrations
@@ -948,59 +949,52 @@ Apart from the `handleEvent(event: Event)` method this particular `EventListener
   - `false` errored or completed and therefore closed
 
 `makeInbound` exposes two functions:
-- `subscribe` to assign a `MessageSink` to the `eventRouter`
-- `start` which attempts to connect the event source with the configured `href` and then attaches `eventRouter` to `message` and `error` events at which point it is ready to emit `CountMessage`s.
+- `subscribe` to add a `MessageSink` to the `eventRouter`
+- `start` to attempt to connect the event source with the configured `href`, later attaching `eventRouter` to the `message` and `error` events, preparing  it to emit `CountMessage`s.
 
 In this simple case the [`MessageEvent`](https://developer.mozilla.org/en-US/docs/Web/API/MessageEvent) will only ever hold the updated count on the [`data`](https://developer.mozilla.org/en-US/docs/Web/API/MessageEvent/data) property and the [`lastEventId`](https://developer.mozilla.org/en-US/docs/Web/API/MessageEvent/lastEventId) property is ignored. In practice any type of serialized `data` (preferably represented via a [discrimated union](https://www.typescriptlang.org/docs/handbook/2/narrowing.html#discriminated-unions)) could be attached. `MessageEvent`s can have [`type`](https://developer.mozilla.org/en-US/docs/Web/API/Event/type)s other than `'message'` for [custom events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#listening_for_custom_events). `lastEventId` is usually used implement the ability to catch up on past events after the event source looses the connection and automatically reconnects.
 
-- `dispatchUpdate` forwards the updated count to the `MessageSink` as a `CountUpdate`
-- `dispatchEnd` sends a `CountEnd` message to the `MessageSink`
-- `dispatchError` sends a `CountError` message to the `MessageSink`
+- `dispatchUpdate` sends the updated count to the `Sink<CounterMessage>` as a `CountUpdate`
+- `MESSAGE_END` is sent to `Sink<CounterMessage>` when the count finished
+- `MESSAGE_ERROR` is sent to `Sink<CounterMessage>` when an error occurs before the connection can be established.
 
-After receiving an error [`Event`](https://developer.mozilla.org/en-US/docs/Web/API/Event) it is assumed that the count has completed if the current `status === true` resulting in `dispatchEnd()`; otherwise `dispatchError()` is invoked.
+After receiving an error [`Event`](https://developer.mozilla.org/en-US/docs/Web/API/Event) it is assumed that the count has completed if the current `status === true` causing `NESSAGE_END`; otherwise `MESSAGE_ERROR` is sent.
 In either case the `eventRouter` is disposed of and cleaned up.
 
 ```JavaScript
 // @ts-check
 // file: src/client/app/inbound.js
-
 /** @typedef { import('../types.ts').CountEnd } CountEnd */
 /** @typedef { import('../types.ts').CountError } CountError */
 /** @typedef { import('../types.ts').CountMessage } CountMessage */
 /** @typedef { import('../types.ts').CountUpdate } CountUpdate */
 /** @typedef { import('../types.ts').Inbound } Inbound */
 /** @typedef { import('../types.ts').MessageSink } MessageSink */
+
+import { Sinks } from '../lib/sinks';
+
 /** @typedef { EventListenerObject & {
  *   status: undefined | boolean;
  *   href: string;
- *   sink: void | MessageSink;
+ *   sinks: Sinks<CountMessage>;
  *   source: void | EventSource;
  * } } HandlerObject */
 
-/** @param { MessageSink } sink */
-function dispatchEnd(sink) {
-  /** @type { CountEnd } */
-  const message = {
-    kind: 'end',
-  };
-  sink(message);
-}
+/** @type { CountEnd } */
+const MESSAGE_END = {
+  kind: 'end',
+};
 
-/** @param { MessageSink } sink
- */
-function dispatchError(sink) {
-  /** @type { CountError } */
-  const message = {
-    kind: 'error',
-    reason: 'Failed to open connection',
-  };
-  sink(message);
-}
+/** @type { CountError } */
+const MESSAGE_ERROR = {
+  kind: 'error',
+  reason: 'Failed to open connection',
+};
 
-/** @param { MessageSink } sink
+/** @param { MessageSink } send
  * @param { MessageEvent<string> } event
  */
-function dispatchUpdate(sink, event) {
+function dispatchUpdate(send, event) {
   const count = Number(event.data);
   if (Number.isNaN(count)) return;
 
@@ -1009,7 +1003,7 @@ function dispatchUpdate(sink, event) {
     kind: 'update',
     count,
   };
-  sink(message);
+  send(message);
 }
 
 /** @param { HandlerObject } router */
@@ -1020,7 +1014,7 @@ function disposeRouter(router) {
     if (router.source.readyState < 2) router.source.close();
   }
   router.source = undefined;
-  router.sink = undefined;
+  router.sinks.clear();
   router.status = false;
 }
 
@@ -1039,22 +1033,22 @@ function makeInbound(href) {
   const eventRouter = {
     status: undefined,
     href,
-    sink: undefined,
+    sinks: new Sinks(),
     source: undefined,
     handleEvent(event) {
-      if (!this.sink || this.status === false) return;
+      if (this.sinks.size < 1 || this.status === false) return;
 
       if (event instanceof MessageEvent) {
         this.status = true;
-        dispatchUpdate(this.sink, event);
+        dispatchUpdate(this.sinks.send, event);
         return;
       }
 
       if (event.type === 'error') {
         if (this.status === true) {
-          dispatchEnd(this.sink);
+          this.sinks.send(MESSAGE_END);
         } else {
-          dispatchError(this.sink);
+          this.sinks.send(MESSAGE_ERROR);
         }
         disposeRouter(this);
       }
@@ -1063,24 +1057,20 @@ function makeInbound(href) {
 
   const start = () => {
     eventRouter.source = new EventSource(eventRouter.href);
-    if (eventRouter.sink) {
+    if (eventRouter.sinks.size > 0) {
       addRouter(eventRouter.source, eventRouter);
     }
   };
 
   /** @param { MessageSink } sink */
   const subscribe = (sink) => {
-    const last = eventRouter.sink;
-    eventRouter.sink = sink;
-    if (!last && eventRouter.source) {
+    const size = eventRouter.sinks.size;
+    const unsubscribe = eventRouter.sinks.add(sink);
+    if (size < 1 && eventRouter.source) {
       addRouter(eventRouter.source, eventRouter);
     }
 
-    return () => {
-      if (eventRouter.sink === sink) {
-        eventRouter.sink = undefined;
-      }
-    };
+    return unsubscribe;
   };
 
   /** @type { Inbound } */

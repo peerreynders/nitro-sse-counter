@@ -1,0 +1,35 @@
+title: client counter stream connect
+
+order: entry, app, app/ inbound, api/ counter, ReadableStream, utils/ hooks, server/ task-queue, server/ event-stream,  server/ counter, addObserver Task, server/ session
+
+entry -> app: start()
+
+app -> app/ inbound: start()
+
+app/ inbound => api/ counter: GET /api/counter
+
+api/ counter -> server/ counter: addObserver()
+
+server/ counter -> server/ counter: queueTask(addObserver)
+
+server/ counter --> addObserver Task: creates
+
+addObserver Task-> server/ session: refreshCounterId()
+
+addObserver Task -> addObserver Task: makeCounterRecord()
+
+addObserver Task -> addObserver Task: updateRecord()
+
+api/ counter -> server/ event-stream: makeEventStream()
+
+server/ event-stream --> ReadableStream: creates
+
+ReadableStream -> api/ counter: init()
+
+api/ counter -> utils/ hooks: counterHooks.hook()
+
+api/ counter -> server/ task-queue: submitTask(countUnicast)
+
+api/ counter => app/ inbound: 200; content-type: text-stream
+
+app/ inbound -> app/ inbound: addRouter()

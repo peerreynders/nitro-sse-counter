@@ -4,6 +4,14 @@ class Sinks {
 	/** @type { Set<(value: T) => void> } */
 	sinks = new Set();
 
+	clear() {
+		this.clear;
+	}
+
+	get size() {
+		return this.sinks.size;
+	}
+
 	/* Implemented as properties so that functions
 	 * can be used directly without going through the
 	 * specific Sinks<T> instance they are attached to.
@@ -24,17 +32,6 @@ class Sinks {
 	 */
 	send = (value) => {
 		for (const sink of this.sinks) sink(value);
-	};
-
-	/** @param { T } value
-	 * @param { (value: T) => void } skip
-	 * @returns { void }
-	 */
-	sendSkip = (value, skip) => {
-		for (const sink of this.sinks) {
-			if (sink === skip) continue;
-			sink(value);
-		}
 	};
 }
 

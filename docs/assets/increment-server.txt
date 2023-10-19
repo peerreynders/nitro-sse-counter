@@ -1,0 +1,27 @@
+title: increment server broadcast
+
+order: task-queue broadcast, server/ counter, utils/ hooks, api/ counter, server/ event-stream, app/ inbound, app/ count, app / context, components/ count,  DOM/ js.c-count, components/ trigger, DOM/ js.c-trigger
+
+task-queue broadcast -> server/ counter: increment()
+
+task-queue broadcast -> utils/ hooks: counterHooks.callHook()
+
+utils/ hooks -> api/ counter: dispatch()
+
+api/ counter -> server/ event-stream: send()
+
+server/ event-stream => app/ inbound: data: count
+
+app/ inbound --> app/ count: CountUpdate
+
+app/ count --> components/ count: count
+
+components/ count -> DOM/ js.c-count: count
+
+app/ inbound --> app / context: CountUpdate
+
+app / context --> components/ trigger: READY
+
+components/ trigger -> DOM/ js.c-trigger: ~~js.c-trigger--wait~~
+
+components/ trigger -> DOM/ js.c-trigger: ~~js.c-trigger--disabled~~

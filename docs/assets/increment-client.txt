@@ -1,0 +1,19 @@
+title: increment client command
+
+DOM/ js.c-trigger -> components/ trigger: click
+
+components/ trigger -> app/ increment: action()
+
+app/ increment -> app/ context: WAIT
+
+app/ context --> components/ trigger: WAIT
+
+components/ trigger -> DOM/ js.c-trigger: js.c-trigger--wait
+
+components/ trigger -> DOM/ js.c-trigger: js.c-trigger--disabled
+
+app/ increment -> app/ outbound: increment()
+
+app/ outbound => api/ increment.post : POST /api/increment
+
+api/ increment.post -> server/ task-queue: submitTask(increment)

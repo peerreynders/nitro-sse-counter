@@ -6,37 +6,31 @@
 /** @typedef { import('../types.ts').CountUpdate } CountUpdate */
 /** @typedef { import('../types.ts').Inbound } Inbound */
 /** @typedef { import('../types.ts').MessageSink } MessageSink */
+
+import { Sinks } from '../lib/sinks';
+
 /** @typedef { EventListenerObject & {
  *   status: undefined | boolean;
  *   href: string;
- *   sink: void | MessageSink;
+ *   sinks: Sinks<CountMessage>;
  *   source: void | EventSource;
  * } } HandlerObject */
 
-/** @param { MessageSink } sink */
-function dispatchEnd(sink) {
-	/** @type { CountEnd } */
-	const message = {
-		kind: 'end',
-	};
-	sink(message);
-}
+/** @type { CountEnd } */
+const MESSAGE_END = {
+	kind: 'end',
+};
 
-/** @param { MessageSink } sink
- */
-function dispatchError(sink) {
-	/** @type { CountError } */
-	const message = {
-		kind: 'error',
-		reason: 'Failed to open connection',
-	};
-	sink(message);
-}
+/** @type { CountError } */
+const MESSAGE_ERROR = {
+	kind: 'error',
+	reason: 'Failed to open connection',
+};
 
-/** @param { MessageSink } sink
+/** @param { MessageSink } send
  * @param { MessageEvent<string> } event
  */
-function dispatchUpdate(sink, event) {
+function dispatchUpdate(send, event) {
 	const count = Number(event.data);
 	if (Number.isNaN(count)) return;
 
@@ -45,7 +39,7 @@ function dispatchUpdate(sink, event) {
 		kind: 'update',
 		count,
 	};
-	sink(message);
+	send(message);
 }
 
 /** @param { HandlerObject } router */
@@ -56,7 +50,7 @@ function disposeRouter(router) {
 		if (router.source.readyState < 2) router.source.close();
 	}
 	router.source = undefined;
-	router.sink = undefined;
+	router.sinks.clear();
 	router.status = false;
 }
 
@@ -75,22 +69,22 @@ function makeInbound(href) {
 	const eventRouter = {
 		status: undefined,
 		href,
-		sink: undefined,
+		sinks: new Sinks(),
 		source: undefined,
 		handleEvent(event) {
-			if (!this.sink || this.status === false) return;
+			if (this.sinks.size < 1 || this.status === false) return;
 
 			if (event instanceof MessageEvent) {
 				this.status = true;
-				dispatchUpdate(this.sink, event);
+				dispatchUpdate(this.sinks.send, event);
 				return;
 			}
 
 			if (event.type === 'error') {
 				if (this.status === true) {
-					dispatchEnd(this.sink);
+					this.sinks.send(MESSAGE_END);
 				} else {
-					dispatchError(this.sink);
+					this.sinks.send(MESSAGE_ERROR);
 				}
 				disposeRouter(this);
 			}
@@ -99,24 +93,20 @@ function makeInbound(href) {
 
 	const start = () => {
 		eventRouter.source = new EventSource(eventRouter.href);
-		if (eventRouter.sink) {
+		if (eventRouter.sinks.size > 0) {
 			addRouter(eventRouter.source, eventRouter);
 		}
 	};
 
 	/** @param { MessageSink } sink */
 	const subscribe = (sink) => {
-		const last = eventRouter.sink;
-		eventRouter.sink = sink;
-		if (!last && eventRouter.source) {
+		const size = eventRouter.sinks.size;
+		const unsubscribe = eventRouter.sinks.add(sink);
+		if (size < 1 && eventRouter.source) {
 			addRouter(eventRouter.source, eventRouter);
 		}
 
-		return () => {
-			if (eventRouter.sink === sink) {
-				eventRouter.sink = undefined;
-			}
-		};
+		return unsubscribe;
 	};
 
 	/** @type { Inbound } */

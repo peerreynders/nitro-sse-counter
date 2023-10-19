@@ -12,8 +12,10 @@
 import { Sinks } from '../lib/sinks';
 import { availableStatus } from './available';
 
-/** @param { StatusSink } sendStatus */
-function makeContext(sendStatus) {
+/** @param { Inbound['subscribe'] } subscribe
+ * @param { StatusSink } sendStatus
+ */
+function makeContext(subscribe, sendStatus) {
 	/** @type { Status | undefined } */
 	let status = {
 		error: true,
@@ -28,39 +30,19 @@ function makeContext(sendStatus) {
 		/** @type { AvailableStatus } */
 		available: availableStatus.READY,
 
-		/** @param { Message } message */
-		messageSink: (message) => {
-			switch (message.kind) {
-				case 'end': {
-					status = {
-						error: false,
-						message: 'Count complete. Reload to restart.',
-					};
-					break;
-				}
-
-				case 'error':
-					break;
-
-				default:
-					return;
-			}
-
-			context.sendAvailable(availableStatus.UNAVAILABLE);
-		},
-
-		/** @param { AvailableStatus } available
-		 */
+		/** @param { AvailableStatus } available */
 		sendAvailable: (available) => {
 			if (!status) return;
 
 			context.available = available;
 			sinks.send(available);
 
-			if (available === availableStatus.UNAVAILABLE) {
-				sendStatus(status);
-				status = undefined;
-			}
+			if (available !== availableStatus.UNAVAILABLE) return;
+
+			// signing off…
+			sendStatus(status);
+			status = undefined;
+			context.unsubscribe();
 		},
 
 		/** @param { AvailableSink } sink
@@ -70,42 +52,54 @@ function makeContext(sendStatus) {
 			sink(context.available);
 			return unsubscribe;
 		},
+
+		unsubscribe: (() => {
+			/** @type { (() => void) | undefined } */
+			let remove = subscribe(handler);
+
+			return () => {
+				if (!remove) return;
+				remove();
+				remove = undefined;
+			};
+
+			/** @param { Message } message */
+			function handler(message) {
+				switch (message.kind) {
+					case 'end': {
+						status = {
+							error: false,
+							message: 'Count complete. Reload to restart.',
+						};
+						context.sendAvailable(availableStatus.UNAVAILABLE);
+						return;
+					}
+
+					case 'error': {
+						context.sendAvailable(availableStatus.UNAVAILABLE);
+						return;
+					}
+
+					default: {
+						if (context.available === availableStatus.WAIT)
+							context.sendAvailable(availableStatus.READY);
+						return;
+					}
+				}
+			}
+		})(),
 	};
 
 	return context;
 }
 
 /** @param { Inbound['subscribe'] } subscribe
- * @param { (message: Message) => void } messageSink
- * @param { AvailableSink } sendAvailable
  */
-function makeCount(subscribe, messageSink, sendAvailable) {
+function makeCount(subscribe) {
 	/** @type { CountSink | undefined } */
 	let sink;
-	/** @type { (() => void) | undefined } */
-	let unsubscribe;
 
-	/** @param { Message } message */
-	const handler = (message) => {
-		switch (message.kind) {
-			case 'update': {
-				if (sink) {
-					sink(message.count);
-				}
-				sendAvailable(availableStatus.READY);
-				return;
-			}
-
-			case 'error':
-			case 'end': {
-				if (unsubscribe) unsubscribe();
-				messageSink(message);
-				return;
-			}
-		}
-	};
-
-	const count = {
+	return {
 		/** @param { CountSink } nextSink
 		 * @return { () => void }
 		 */
@@ -116,18 +110,21 @@ function makeCount(subscribe, messageSink, sendAvailable) {
 			};
 		},
 
-		/** @type { (() => void) | undefined } */
 		unsubscribe: (() => {
-			const removeHandler = subscribe(handler);
-			const dispose = () => {
-				count.unsubscribe = unsubscribe = undefined;
-				removeHandler();
+			/** @type { (() => void) | undefined } */
+			let remove = subscribe(handler);
+			return () => {
+				if (!remove) return;
+				remove();
+				remove = undefined;
 			};
-			return dispose;
+
+			/** @param { Message } message */
+			function handler(message) {
+				if (message.kind === 'update' && sink) sink(message.count);
+			}
 		})(),
 	};
-
-	return count;
 }
 
 /** @param { () => Promise<boolean> } incrementFn
@@ -198,12 +195,8 @@ function makeStatus() {
  */
 function makeApp({ inbound, outbound }) {
 	const status = makeStatus();
-	const context = makeContext(status.send);
-	const count = makeCount(
-		inbound.subscribe,
-		context.messageSink,
-		context.sendAvailable
-	);
+	const context = makeContext(inbound.subscribe, status.send);
+	const count = makeCount(inbound.subscribe);
 	const increment = makeIncrement(outbound.increment, context.sendAvailable);
 
 	// Internal registrations
