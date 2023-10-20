@@ -1,15 +1,170 @@
 # nitro-sse-counter
-SSE POC with UnJS Nitro and a TS JSDoc frontend
 
-… still under construction …
+[Server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events) (SSE; using [`ReadableStream`](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream)) proof of concept using UnJS [Nitro](https://nitro.unjs.io/) and a [TS JSDoc](https://www.typescriptlang.org/docs/handbook/jsdoc-supported-types.html) frontend.
+
+```shell
+nitro-sse-counter$ npm i
+
+> nitro-sse-counter@0.0.0 prepare
+> nitropack prepare
+
+added 397 packages, and audited 399 packages in 31s
+
+70 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+nitro-sse-counter$ npm run client:build
+
+> nitro-sse-counter@0.0.0 client:build
+> ./node_modules/.bin/rollup -c src/client/rollup.config.mjs
+
+src/client/entry.js → src/public/main.js...
+created src/public/main.js in 413ms
+nitro-sse-counter$ cp .env.example .env
+nitro-sse-counter$ npm run dev
+
+> nitro-sse-counter@0.0.0 dev
+> nitropack dev
+
+  ➜ Local:    http://localhost:3000/
+  ➜ Network:  use --host to expose
+
+✔ Nitro built in 566 ms
+
+nitro-sse-counter$
+```
+
+## Demonstration
+
+After launching the server open 3 separate tabs to `http://localhost:3000/` in the browser. Then switch to incognito mode and open another 2 tabs to `http://localhost:3000/` (alternately open them on a different (make of) browser). 
+
+> ⚠️ Caution 
+>
+> **Don't open too many tabs/pages** with event sources to the same server on the same browser or things will invariably break.
+>
+>[HTML Living Standard—9.2.7 Authoring notes](https://html.spec.whatwg.org/multipage/server-sent-events.html#authoring-notes):
+>“Clients that support HTTP's per-server connection limitation might run into trouble when opening multiple pages from a site if each page has an [`EventSource`](https://html.spec.whatwg.org/multipage/server-sent-events.html#eventsource) to the same domain. Authors can avoid this using the relatively complex mechanism of using unique domain names per connection, or by allowing the user to enable or disable the [`EventSource`](https://html.spec.whatwg.org/multipage/server-sent-events.html#eventsource) functionality on a per-page basis, or by sharing a single [`EventSource`](https://html.spec.whatwg.org/multipage/server-sent-events.html#eventsource) object using a [shared worker](https://html.spec.whatwg.org/multipage/workers.html#sharedworkerglobalscope).” 
+> 
+> [MDN SharedWorker](https://developer.mozilla.org/en-US/docs/Web/API/SharedWorker) 
+>
+> [Can I Use](https://caniuse.com/mdn-api_sharedworker)
+>
+> Google Chrome for example has a limit of [**6 connections** per **domain** per **browser**](https://bugs.chromium.org/p/chromium/issues/detail?id=275955) under HTTP/1.1 (this limitation does not apply to HTTP/2.x and beyond, through with HTTP 3.x [WebTransport](https://www.w3.org/TR/webtransport/) is likely a better fit).
+> 
+> See also
+> - [SSE vs WebSockets vs Long Polling. Martin Chaov. JS Fest 2018](https://youtu.be/n9mRjkQg3VE)
+> - [Using Server-Sent Events to Simplify Real-time Streaming at Scale](https://shopify.engineering/server-sent-events-data-streaming)
+
+All five tabs will show a count of “0”. 
+
+- On the incognito side click the “Increment” button on one of the tabs. Once it changes to “1” check to other tab to discover that its count has changed to “1” as well. The three tabs on the normal side are still showing a count of “0”.
+
+The server uses an [`HttpOnly`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#httponly) cookie (with [h3 session support](https://www.jsdocs.io/package/h3#Session)) to associate a page with a `CounterRecord`. 
+While each page has it's own event source, all pages associated with the same browser session share the same `CounterRecord`. When **one** of the pages within the session is incremented, **all** pages on the same session will be updated wit the new value. 
+
+Because the normal and incognito sessions are kept separate only the incognito tabs were updated. 
+
+- Switch to the normal tabs an increment one of them twice. All normal tabs will now show a count of “2” while the incognito tabs still show a count “1”.
+
+Advancing the count to “10” will cause the server to close all the SSE responses that are associated with that `CounterRecord`.
+
+Normally the client event sources will attempt to reconnect immediately but in this case the client will simply close the event source once it receives an error.
+
+Reloading one of the tabs will create an entirely new `CounterRecord` on the server and start the process all over again. The other tabs however won't be notified as they have lost their SSE connection. Reloading them will synchronize them with the other tab as the shared session will give them access to the same `CounterRecord`.
+
+## Overview
+
+The figure below roughly outlines the relationships between the various modules that support their collaborations.
 
 ![Overview of the client-server organization](docs/assets/overview.jpg)
+<small>(Made with [excalidraw](https://excalidraw.com/).)</small>
 
-![Client counter streeam connection activity diagram](docs/assets/connect-client.jpg)
+**[Server](#server)**
+
+- **`/routes/index`** returns the page's HTML. It checks whether a `CounterRecord` is currently associated with the client session. If one is found the current count is interpolated into the page. Otherwise a new `CounterRecord` isn't created until the page connects with an event source.
+
+- **`/middleware`** just moves some data from the request into the [event](https://www.jsdocs.io/package/h3#H3Event) [context](https://www.jsdocs.io/package/h3#H3EventContext) for easy consumption. 
+
+- **[`/api/counter`](#sse-connection-endpoint)** returns an [event-stream](#server-to-client-communication) to carry count updates to the client via a `dispatch()` callback registered with [hookable](https://github.com/unjs/hookable) set up in `/utils/hooks`. It submits a task to the [`task-queue`](#task-queue) to `addObserver` and `countUnicast`. `countUnicast` sends the most recent count as the first message through the event stream that was just created.
+
+- **[`/api/increment`](#increment-endpoint)** triggers an eventual increment (and subsequent count update message to every observer) of the `CounterRecord` associated with the request's session by submitting an `updateBroadcast` task (`increment` & `notifyObservers`) to [`task-queue`](#task-queue). [`202 Accepted`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/202) is returned if the `CounterRecord` exists, otherwise [`409 Conflict`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/409) is returned.
+
+- **[`/server/task-queue`](#task-queue)** exists to manage `countUnicast` and `updateBroadcast` tasks. It sequences tasks belonging to the same `CounterRecord` while those of other records can happen concurrently. It removes unnecessary `countUnicast` tasks when an `updateBroadcast` is already queued or when it's queued while `countUnicast` tasks are waiting.
+
+- **[`/server/counter`](#counter-management)** furnishes the `addObserver`, `dropObserver`, `increment`, and `counterRecordFromEvent` tasks. The `CounterRecord` itself is handled by [Unstorage](https://unstorage.unjs.io/). `counter` has it's own internal task queue to sequence operations against the same `CounterRecord` as accesses outside of those from `countUpdate` and `updateBroadcast` tasks (managed by `task-queue`) could otherwise still lead to race conditions. `addObserver` either creates a new `CounterRecord` or increments the observer count on an already existing `CounterRecord`; `dropObserver` decrements the observer count or removes the `CounterRecord` entirely if there are no more observers; `increment` increments the count, stores the updated record and returns a copy of the updated record; `counterRecordFromEvent` returns a copy of the record if it currently exists.
+
+
+**[Client](#client)**
+
+- **[`/entry`](#client)** bootstraps the client side JavaScript by wrapping the browser dependencies, injecting the wrappers into the [core app](#core-app) and then binding the [UI components](#components) to the app and their respective DOM regions.
+
+- **[`/components/count`](#count)** is the UI component for updating and visually adjusting the count's appearance based on `count` and `availableStatus` notifications from the [`app`](#app).
+
+- **[`/components/trigger`](#trigger)** is the UI component that forwards the button `click` to the [`app`](#app) and adjusts the button's visual appearance based on `availableStatus` notifications from the [`app`](#app).
+
+- **[`/components/status`](#status)** is the UI component that updates and visually adjusts the status messages, received via `status` notifications from the [`app`](#app). 
+
+- **[`/app/inbound`](#inbound)** wraps the event source. `start()` creates the event source a forwards any messages or errors to subscribers.
+
+- **[`/app/outbound`](#outbound)** wraps the [`POST fetch()`](https://developer.mozilla.org/en-US/docs/Web/API/fetch) to the [`/api/increment` endpoint](#increment-endpoint). The status code is mapped to a boolean result.
+
+- **[`/app/context`](#core-app)** acts as the [marshalling yard](https://en.wikipedia.org/wiki/Classification_yard) for the counter's `availableStatus`. It specifically monitors the messages from `inbound` to make the required adjustments to the `availableStatus` and notifies all subscribers of the change. Other forced changes are reported via `sendAvailable()`. When the `availableStatus` changes to `UNAVAILABLE` an appropriate status message is selected and forwarded to **`/app/status`**.
+
+- **[`/app/increment`](#core-app)** is responsible for issuing the `increment()` command via `/app/outbound` **and** forcing `/app/context` into a `WAIT` status. It will also force the `UNAVAILABLE` status should the `increment()` command fail to be accepted.
+
+- **[`/app/count`](#core-app)** filters the `inbound` update messages and forwards them as plain count updates to its subscriber ([`/components/count`](#count)).
+
+- **[`/app/status`](#core-app)** forwards any status messages originating anywhere from inside the [`app`](#app) to its subscriber ([`/components/status`](#status)).
+
+## Activity Diagrams
+
+The following activity diagrams highlight some collaborations for some key capabilities. 
+
+
+### Counter stream connection
+
+The counter stream connects at the end of the [`entry`](#client) script that runs when the `/` page loads.
+
+![Client counter stream connection activity diagram](docs/assets/connect-client.jpg)
+
+- The [`entry`](#client) script causes the [`app/inbound`](#inbound) `start()` to execute which issues a `GET` request to the server's `/api/counter` endpoint when `inbound` creates the event source.
+
+- First an `addObserver` task is submitted. It will create and store a fresh `CounterRecord` (if one already existed, it is simply updated with an incremented observer count).
+
+- A [`ReadableStream`](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream) is created while a `dispatch()` callback is registered with the `counterHooks` and a `countUnicast` task is submitted to eventually sent the first message with the current count through the stream. Finally that stream is returned in the HTTP response (with is kept open for further messages).
+
+- With the event source created `inbound`'s `addRouter` registers a `message` and `error` handler on it to notify s its subscribers of these events.
+
+### Increment Command
 
 ![Client initiated increment command activity diagram](docs/assets/increment-client.jpg)
 
+- A user `click` on a DOM button marked with the `js:c-trigger` ([JavaScript hooks](https://cssguidelin.es/#javascript-hooks), [component namespaces](https://csswizardry.com/2015/03/more-transparent-ui-code-with-namespaces/#component-namespaces-c-)) [class](https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/class) initiates the increment command.
+
+- [`components/trigger`](#trigger) invokes the `increment()` action on [`/app/increment`](#core-app).
+
+- First the `WAIT` `availableStatus` is sent to [`app/context`](#core-app) which broadcasts it to all its subscribers which includes `components/trigger`. It promptly applies the `js:c-trigger--wait` and `js:c-trigger--disabled` classes to the DOM button. 
+
+- Second `/app/outbound`'s `increment()` function is called resulting in a HTTP `POST` request to [`/api/increment`](#increment-endpoint). This causes a `updateBroadcast` (`increment` & `notifyObservers`) task to be submitted (and a [`202 Accepted`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/202) status to be returned).
+
+### Increment Broadcast
+
+Eventually the [`/server/task-queue`](#task-queue) executes the `updateBroadcast` task.
+
 ![Server increment broadcast activity diagram](docs/assets/increment-server.jpg)
+
+- First [`/server/counter`](#counter-management) performs the increment on the appropriate `CounterRecord` updates the storage and returns the updated record.
+
+- Second that record is used to broadcast the update. The necessary arguments for the `dispatch()` callbacks registered with `counterHooks` are passed to [hookable](https://github.com/unjs/hookable) which then notifies **every** registered callback.
+
+- The `dispatch()` created by [`/api/counter`](#sse-connection-endpoint) uses `send()` provided by [`/server/event-stream`](#server-to-client-communication) to send the update throug the [`ReadableStream`](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream).
+
+- The updated `count` is received as a [MessageEvent](https://developer.mozilla.org/en-US/docs/Web/API/MessageEvent) by [`/app/inbound`](#inbound) which forwards it as a `CountUpdate` to all its subscribers.
+
+- [`/app/count`](#core-app) is one such subscriber. After receiving the `CountUpdate` it notifies [`/components/count`](#count) of the update which modifies the [`Text`](https://developer.mozilla.org/en-US/docs/Web/API/Text) node inside its element marked with a `js:c-count` [class](https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/class).
+
+- [`/app/context`](#core-app) is the other `CountMessage` subscriber. The `CountUpdate` causes it to change the previously set `WAIT` `availableStatus` to `READY` and broadcast the change to it's subscribers. [`/components/trigger`](#trigger) is one such subscriber which in response to `READY` removes both the `js:c-trigger--wait` and `js:c-trigger--disabled` classes from its DOM button—thereby enabling the “Increment” button to be cliked once again.
 
 ## Server
 
