@@ -1,39 +1,43 @@
 {
 	"name": "nitro-sse-counter",
 	"version": "0.0.0",
-  "scripts": {
-    "prepare": "nitropack prepare",
-    "dev": "nitropack dev",
-    "build": "nitropack build",
-    "preview": "node .output/server/index.mjs",
+	"scripts": {
+		"prepare": "nitropack prepare",
+		"dev": "nitropack dev",
+		"build": "nitropack build",
+		"preview": "node .output/server/index.mjs",
 		"lint:es": "eslint -c .eslintrc.server.cjs ./src",
 		"lint:types": "./node_modules/.bin/tsc --noEmit",
-    "client:build": "./node_modules/.bin/rollup -c src/client/rollup.config.mjs",
+		"client:build": "./node_modules/.bin/rollup -c src/client/rollup.config.mjs",
 		"client:es": "eslint -c .eslintrc.client.cjs ./src/client",
-    "client:types": "./node_modules/.bin/tsc --noEmit -p src/client/tsconfig.json",
-    "format": "prettier --write ./src"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/peerreynders/nitro-sse-counter"
-  },
-  "keywords": [],
-  "author": "Peer Reynders",
-  "license": "MIT",
-  "homepage": "https://github.com/peerreynders/nitro-sse-counter#readme",
-  "bugs": {
-    "url": "https://github.com/peerreynders/nitro-sse-counter/issues"
-  },	
-  "dependencies": {
-    "nitropack": "latest"
-  },
-  "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^6.7.5",
-    "@typescript-eslint/parser": "^6.7.5",
-    "eslint": "^8.51.0",
-    "eslint-config-prettier": "^9.0.0",
-    "prettier": "^3.0.3",
-    "qsa-observer": "^3.0.2",
-    "typescript": "^5.2.2"
-  }
+		"client:types": "./node_modules/.bin/tsc --noEmit -p src/client/tsconfig.json",
+		"format": "prettier --write ./src"
+	},
+	"engines": {
+		"node": ">=19.9.0 || >=18.17.0"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/peerreynders/nitro-sse-counter"
+	},
+	"keywords": [],
+	"author": "Peer Reynders",
+	"license": "MIT",
+	"homepage": "https://github.com/peerreynders/nitro-sse-counter#readme",
+	"bugs": {
+		"url": "https://github.com/peerreynders/nitro-sse-counter/issues"
+	},
+	"dependencies": {
+		"nitropack": "latest"
+	},
+	"devDependencies": {
+		"@typescript-eslint/eslint-plugin": "^6.7.5",
+		"@typescript-eslint/parser": "^6.7.5",
+		"eslint": "^8.51.0",
+		"eslint-config-prettier": "^9.0.0",
+		"prettier": "^3.0.3",
+		"qsa-observer": "^3.0.2",
+		"typescript": "^5.2.2"
+	}
 }
+

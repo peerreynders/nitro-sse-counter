@@ -1,3 +1,5 @@
+import { URL } from 'node:url';
+
 import type { IncomingMessage } from 'node:http';
 
 const CONTEXT_URL = 'url';
